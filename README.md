@@ -30,7 +30,7 @@ chmod +x quick_install.sh
 
 ```bash
 # 下载脚本
-wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_universal.sh
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_enhanced.sh
 chmod +x mtproxy_universal.sh
 
 # 交互式菜单
@@ -55,7 +55,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/mqiancheng/mtproxy/main/quic
 ### 方法二：完整安装
 ```bash
 # 下载脚本
-wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_universal.sh
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_enhanced.sh
 chmod +x mtproxy_universal.sh
 
 # 运行安装
