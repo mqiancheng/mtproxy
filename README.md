@@ -15,7 +15,7 @@
 
 ```bash
 # 下载并运行
-wget https://raw.githubusercontent.com/your-repo/mtproxy/main/quick_install.sh
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/quick_install.sh
 chmod +x quick_install.sh
 ./quick_install.sh
 ```
@@ -30,7 +30,7 @@ chmod +x quick_install.sh
 
 ```bash
 # 下载脚本
-wget https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy_universal.sh
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_universal.sh
 chmod +x mtproxy_universal.sh
 
 # 交互式菜单
@@ -49,13 +49,13 @@ chmod +x mtproxy_universal.sh
 
 ### 方法一：一键安装（推荐新手）
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/your-repo/mtproxy/main/quick_install.sh)
+bash <(curl -fsSL https://raw.githubusercontent.com/mqiancheng/mtproxy/main/quick_install.sh)
 ```
 
 ### 方法二：完整安装
 ```bash
 # 下载脚本
-wget https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy_universal.sh
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_universal.sh
 chmod +x mtproxy_universal.sh
 
 # 运行安装
