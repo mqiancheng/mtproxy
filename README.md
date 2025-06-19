@@ -25,24 +25,24 @@ chmod +x quick_install.sh
 - 管理端口：8888
 - 伪装域名：azure.microsoft.com
 
-### 2. `mtproxy_universal.sh` - 完整管理脚本
+### 2. `mtproxy_enhanced.sh` - 完整管理脚本
 提供完整的安装、配置和管理功能。
 
 ```bash
 # 下载脚本
 wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_enhanced.sh
-chmod +x mtproxy_universal.sh
+chmod +x mtproxy_enhanced.sh
 
 # 交互式菜单
-./mtproxy_universal.sh
+./mtproxy_enhanced.sh
 
 # 命令行使用
-./mtproxy_universal.sh install    # 安装
-./mtproxy_universal.sh start      # 启动
-./mtproxy_universal.sh stop       # 停止
-./mtproxy_universal.sh restart    # 重启
-./mtproxy_universal.sh status     # 查看状态
-./mtproxy_universal.sh uninstall  # 卸载
+./mtproxy_enhanced.sh install    # 安装
+./mtproxy_enhanced.sh start      # 启动
+./mtproxy_enhanced.sh stop       # 停止
+./mtproxy_enhanced.sh restart    # 重启
+./mtproxy_enhanced.sh status     # 查看状态
+./mtproxy_enhanced.sh uninstall  # 卸载
 ```
 
 ## 🚀 快速开始
@@ -56,10 +56,10 @@ bash <(curl -fsSL https://raw.githubusercontent.com/mqiancheng/mtproxy/main/quic
 ```bash
 # 下载脚本
 wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_enhanced.sh
-chmod +x mtproxy_universal.sh
+chmod +x mtproxy_enhanced.sh
 
 # 运行安装
-./mtproxy_universal.sh
+./mtproxy_enhanced.sh
 # 选择选项 1 进行安装
 ```
 
@@ -86,19 +86,19 @@ chmod +x mtproxy_universal.sh
 
 ```bash
 # 查看状态和连接信息
-./mtproxy_universal.sh status
+./mtproxy_enhanced.sh status
 
 # 停止服务
-./mtproxy_universal.sh stop
+./mtproxy_enhanced.sh stop
 
 # 启动服务
-./mtproxy_universal.sh start
+./mtproxy_enhanced.sh start
 
 # 重启服务
-./mtproxy_universal.sh restart
+./mtproxy_enhanced.sh restart
 
 # 完全卸载
-./mtproxy_universal.sh uninstall
+./mtproxy_enhanced.sh uninstall
 ```
 
 ### 配置文件
