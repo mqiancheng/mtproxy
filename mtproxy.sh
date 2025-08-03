@@ -24,7 +24,7 @@ print_error() { echo -e "${RED}[错误]${NC} $1"; }
 # 检测网络环境
 detect_network() {
     print_info "检测网络环境..."
-    
+
     # 检测IPv4
     IPV4=$(curl -s --connect-timeout 10 --max-time 10 https://api.ip.sb/ip -A Mozilla --ipv4 2>/dev/null)
     if [[ -n "$IPV4" && "$IPV4" != *"curl:"* && "$IPV4" != *"error"* ]]; then
@@ -39,7 +39,7 @@ detect_network() {
         HAS_IPV4=false
         IS_WARP=false
     fi
-    
+
     # 检测IPv6
     IPV6=$(curl -s --connect-timeout 10 --max-time 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
     if [[ -n "$IPV6" && "$IPV6" != *"curl:"* && "$IPV6" != *"error"* ]]; then
@@ -51,7 +51,15 @@ detect_network() {
     else
         HAS_IPV6=false
     fi
-    
+
+    # 检测本地IP（用于NAT环境）
+    LOCAL_IP=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+' | head -1)
+    if [[ -n "$LOCAL_IP" && "$LOCAL_IP" != "$IPV4" ]]; then
+        IS_NAT=true
+    else
+        IS_NAT=false
+    fi
+
     # 确定网络类型
     if [[ "$HAS_IPV4" == true && "$HAS_IPV6" == true ]]; then
         NETWORK_TYPE="dual"
@@ -62,15 +70,16 @@ detect_network() {
     else
         NETWORK_TYPE="none"
     fi
-    
+
     if [[ "$IS_WARP" == true ]]; then
         NETWORK_TYPE="${NETWORK_TYPE}_warp"
     fi
-    
+
     echo -e "网络类型: ${GREEN}$NETWORK_TYPE${NC}"
     [[ "$HAS_IPV4" == true ]] && echo -e "IPv4: ${GREEN}$IPV4${NC}"
     [[ "$HAS_IPV6" == true ]] && echo -e "IPv6: ${GREEN}$IPV6${NC}"
     [[ "$IS_WARP" == true ]] && echo -e "WARP: ${YELLOW}检测到${NC}"
+    [[ "$IS_NAT" == true ]] && echo -e "NAT环境: ${YELLOW}是${NC} (本地IP: $LOCAL_IP)"
 }
 
 # 下载MTG
@@ -160,8 +169,14 @@ generate_mtg_command() {
             [[ "$HAS_IPV6" == true ]] && external_params="$external_params -6 [$IPV6]:$PORT"
             ;;
         "ipv4"|"ipv4_warp")
-            # 纯IPv4：只绑定IPv4
-            bind_params="-b 0.0.0.0:$PORT"
+            # 纯IPv4：根据NAT环境选择绑定地址
+            if [[ "$IS_NAT" == true ]]; then
+                # NAT环境：绑定本地IP或0.0.0.0，但禁用IPv6
+                bind_params="-b 0.0.0.0:$PORT"
+            else
+                # 非NAT环境：绑定公网IP
+                bind_params="-b $IPV4:$PORT"
+            fi
             external_params="-4 $IPV4:$PORT"
             ;;
         "ipv6"|"ipv6_warp")
@@ -210,19 +225,43 @@ start_mtproxy() {
     
     print_info "启动MTProxy..."
     print_info "命令: $mtg_cmd"
-    
+
+    # 在纯IPv4环境下，临时禁用IPv6以强制MTG使用IPv4
+    local ipv6_disabled=false
+    if [[ "$NETWORK_TYPE" == "ipv4" || "$NETWORK_TYPE" == "ipv4_warp" ]]; then
+        if [ -f /proc/sys/net/ipv6/conf/all/disable_ipv6 ]; then
+            local current_ipv6=$(cat /proc/sys/net/ipv6/conf/all/disable_ipv6)
+            if [ "$current_ipv6" = "0" ]; then
+                print_info "临时禁用IPv6以确保正确绑定..."
+                echo 1 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null
+                ipv6_disabled=true
+            fi
+        fi
+    fi
+
     # 启动MTG
-    eval "$mtg_cmd" >/dev/null 2>&1 &
+    eval "$mtg_cmd" > mtg.log 2>&1 &
     echo $! > $pid_file
-    
-    sleep 2
-    
+
+    sleep 3
+
+    # 恢复IPv6设置
+    if [ "$ipv6_disabled" = true ]; then
+        sleep 1
+        print_info "恢复IPv6设置..."
+        echo 0 > /proc/sys/net/ipv6/conf/all/disable_ipv6 2>/dev/null
+    fi
+
     # 检查启动状态
     if [ -f "$pid_file" ] && kill -0 $(cat $pid_file) 2>/dev/null; then
         print_success "MTProxy启动成功 (PID: $(cat $pid_file))"
         show_info
     else
         print_error "MTProxy启动失败"
+        if [ -f "mtg.log" ]; then
+            print_error "错误日志:"
+            cat mtg.log
+        fi
         rm -f $pid_file
         return 1
     fi
