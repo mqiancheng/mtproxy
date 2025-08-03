@@ -908,8 +908,8 @@ generate_mtg_params() {
             fi
             ;;
         "ipv4_only")
-            # 纯IPv4环境
-            bind_addr="0.0.0.0:$port"
+            # 纯IPv4环境：明确绑定IPv4地址
+            bind_addr="$PUBLIC_IPV4:$port"
             prefer_ip="--prefer-ip=ipv4"
             if [[ -n "$PUBLIC_IPV4" ]]; then
                 external_params="-4 $PUBLIC_IPV4:$port"
