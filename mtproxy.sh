@@ -169,12 +169,11 @@ generate_mtg_command() {
             [[ "$HAS_IPV6" == true ]] && external_params="$external_params -6 [$IPV6]:$PORT"
             ;;
         "ipv4"|"ipv4_warp")
-            # 纯IPv4：根据NAT环境选择绑定地址
+            # 纯IPv4：强制使用IPv4绑定
+            # 在NAT环境下绑定内网IP，避免IPv6
             if [[ "$IS_NAT" == true ]]; then
-                # NAT环境：绑定本地IP或0.0.0.0，但禁用IPv6
-                bind_params="-b 0.0.0.0:$PORT"
+                bind_params="-b $LOCAL_IP:$PORT"
             else
-                # 非NAT环境：绑定公网IP
                 bind_params="-b $IPV4:$PORT"
             fi
             external_params="-4 $IPV4:$PORT"
