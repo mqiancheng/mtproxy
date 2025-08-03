@@ -78,98 +78,30 @@ check_system_info() {
     echo -e "磁盘使用: ${GREEN}$disk_usage${NC}"
 }
 
-# 网络环境检测
-detect_network_environment() {
-    local ipv4=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4 2>/dev/null)
-    local ipv6=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
-    local has_ipv4=false
-    local has_ipv6=false
-    local is_warp=false
-    local is_nat=false
-
-    # 检查IPv4
-    if [[ -n "$ipv4" && "$ipv4" != *"curl:"* && "$ipv4" != *"error"* ]]; then
-        has_ipv4=true
-        # 检查是否为WARP (Cloudflare IP段)
-        if [[ "$ipv4" =~ ^(162\.159\.|104\.28\.|172\.67\.|104\.16\.) ]]; then
-            is_warp=true
-        fi
-    fi
-
-    # 检查IPv6
-    if [[ -n "$ipv6" && "$ipv6" != *"curl:"* && "$ipv6" != *"error"* ]]; then
-        has_ipv6=true
-        # 检查是否为WARP IPv6
-        if [[ "$ipv6" =~ ^2606:4700: ]]; then
-            is_warp=true
-        fi
-    fi
-
-    # 检查是否为NAT环境
-    local local_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+' | head -1)
-    if [[ -n "$local_ip" && "$local_ip" != "$ipv4" ]]; then
-        is_nat=true
-    fi
-
-    # 确定网络环境类型
-    if [[ "$has_ipv4" == true && "$has_ipv6" == true && "$is_warp" == false ]]; then
-        NETWORK_TYPE="dual_stack"
-    elif [[ "$has_ipv4" == true && "$has_ipv6" == false ]]; then
-        NETWORK_TYPE="ipv4_only"
-    elif [[ "$has_ipv4" == false && "$has_ipv6" == true ]]; then
-        NETWORK_TYPE="ipv6_only"
-    elif [[ "$is_warp" == true ]]; then
-        NETWORK_TYPE="warp_proxy"
-    else
-        NETWORK_TYPE="unknown"
-    fi
-
-    # 导出环境变量
-    export NETWORK_TYPE
-    export HAS_IPV4=$has_ipv4
-    export HAS_IPV6=$has_ipv6
-    export IS_WARP=$is_warp
-    export IS_NAT=$is_nat
-    export PUBLIC_IPV4="$ipv4"
-    export PUBLIC_IPV6="$ipv6"
-    export LOCAL_IP="$local_ip"
-}
-
-# 网络检查 (整合了基本检查和环境检测)
+# 网络检查
 check_network() {
     print_line
-    print_info "网络连接检查与环境检测"
+    print_info "网络连接检查"
     print_line
-
-    detect_network_environment
-
-    # 显示网络环境信息
-    echo -e "网络环境类型: ${GREEN}$NETWORK_TYPE${NC}"
-
+    
     # 检查IPv4连接
     print_info "检查IPv4连接..."
-    if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "IPv4地址: ${GREEN}$PUBLIC_IPV4${NC}"
-        [[ "$IS_WARP" == true ]] && echo -e "WARP检测: ${YELLOW}是${NC}"
+    local ipv4=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4)
+    if [[ -n "$ipv4" && "$ipv4" != *"curl:"* ]]; then
+        echo -e "IPv4地址: ${GREEN}$ipv4${NC}"
     else
         echo -e "IPv4连接: ${RED}失败${NC}"
     fi
-
+    
     # 检查IPv6连接
     print_info "检查IPv6连接..."
-    if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "IPv6地址: ${GREEN}$PUBLIC_IPV6${NC}"
+    local ipv6=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+    if [[ -n "$ipv6" && "$ipv6" != *"curl:"* && "$ipv6" != *"error"* ]]; then
+        echo -e "IPv6地址: ${GREEN}$ipv6${NC}"
     else
         echo -e "IPv6连接: ${YELLOW}不可用${NC}"
     fi
-
-    # NAT检测
-    if [[ "$IS_NAT" == true ]]; then
-        echo -e "NAT环境: ${YELLOW}是${NC} (本地IP: $LOCAL_IP)"
-    else
-        echo -e "NAT环境: ${GREEN}否${NC}"
-    fi
-
+    
     # 检查DNS解析
     print_info "检查DNS解析..."
     if nslookup google.com >/dev/null 2>&1; then
@@ -177,33 +109,12 @@ check_network() {
     else
         echo -e "DNS解析: ${RED}异常${NC}"
     fi
-
+    
     # 检查网络接口
     print_info "网络接口信息:"
     ip addr show | grep -E "inet |inet6 " | grep -v "127.0.0.1" | grep -v "::1" | while read line; do
         echo -e "  ${CYAN}$line${NC}"
     done
-
-    # 显示环境特定的提示
-    echo ""
-    print_info "环境分析:"
-    case "$NETWORK_TYPE" in
-        "dual_stack")
-            echo -e "${GREEN}✓ 双栈环境，IPv4和IPv6都可用，连接应该稳定${NC}"
-            ;;
-        "ipv4_only")
-            echo -e "${YELLOW}⚠ 纯IPv4环境，IPv6连接将不可用${NC}"
-            ;;
-        "ipv6_only")
-            echo -e "${YELLOW}⚠ 纯IPv6环境，确保客户端支持IPv6${NC}"
-            ;;
-        "warp_proxy")
-            echo -e "${YELLOW}⚠ WARP代理环境，可能存在连接稳定性问题${NC}"
-            ;;
-        "unknown")
-            echo -e "${RED}✗ 网络环境异常，建议运行诊断功能${NC}"
-            ;;
-    esac
 }
 
 # 端口检查
@@ -395,68 +306,42 @@ test_connection() {
     # 测试外部连接
     print_info "测试外部连接..."
 
-    detect_network_environment
-
     # 测试IPv4外部连接
-    if [[ "$HAS_IPV4" == true && -n "$PUBLIC_IPV4" ]]; then
-        print_info "测试IPv4外部连接 ($PUBLIC_IPV4:$port)..."
-        if timeout 10 bash -c "</dev/tcp/$PUBLIC_IPV4/$port" 2>/dev/null; then
+    if [[ -n "$public_ip" ]]; then
+        print_info "测试IPv4外部连接 ($public_ip:$port)..."
+        if timeout 10 bash -c "</dev/tcp/$public_ip/$port" 2>/dev/null; then
             echo -e "IPv4外部端口 $port: ${GREEN}可连接${NC}"
         else
             echo -e "IPv4外部端口 $port: ${RED}无法连接${NC}"
-            if [[ "$IS_NAT" == true ]]; then
-                echo -e "  ${YELLOW}提示: 检测到NAT环境，可能需要端口映射${NC}"
-            fi
         fi
     fi
 
     # 测试IPv6外部连接
-    if [[ "$HAS_IPV6" == true && -n "$PUBLIC_IPV6" ]]; then
-        print_info "测试IPv6外部连接 ([$PUBLIC_IPV6]:$port)..."
-        # IPv6连接测试需要特殊处理
-        if command -v nc >/dev/null 2>&1; then
-            if timeout 10 nc -6 -z "$PUBLIC_IPV6" "$port" 2>/dev/null; then
-                echo -e "IPv6外部端口 $port: ${GREEN}可连接${NC}"
-            else
-                echo -e "IPv6外部端口 $port: ${RED}无法连接${NC}"
-            fi
+    local public_ipv6=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+    if [[ -n "$public_ipv6" && "$public_ipv6" != *"curl:"* && "$public_ipv6" != *"error"* ]]; then
+        print_info "测试IPv6外部连接 ([$public_ipv6]:$port)..."
+        if timeout 10 bash -c "</dev/tcp/$public_ipv6/$port" 2>/dev/null; then
+            echo -e "IPv6外部端口 $port: ${GREEN}可连接${NC}"
         else
-            echo -e "IPv6外部端口 $port: ${YELLOW}无法测试 (缺少nc工具)${NC}"
+            echo -e "IPv6外部端口 $port: ${RED}无法连接${NC}"
         fi
     else
-        echo -e "IPv6连接: ${YELLOW}不可用，跳过IPv6连接测试${NC}"
+        echo -e "IPv6地址: ${YELLOW}不可用，跳过IPv6连接测试${NC}"
     fi
-
+    
     # 生成连接信息
-    local domain_hex=$(printf "%s" "$domain" | od -An -tx1 | tr -d ' \n')
-    local client_secret="ee${secret}${domain_hex}"
-
-    print_info "连接信息:"
-    echo -e "网络环境: ${GREEN}$NETWORK_TYPE${NC}"
-
-    if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "服务器IPv4: ${GREEN}$PUBLIC_IPV4${NC}"
-    fi
-    if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "服务器IPv6: ${GREEN}$PUBLIC_IPV6${NC}"
-    fi
-
-    echo -e "端口: ${GREEN}$port${NC}"
-    echo -e "密钥: ${GREEN}$client_secret${NC}"
-    echo ""
-
-    # 生成连接链接
-    if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "${BLUE}Telegram连接链接 (IPv4):${NC}"
-        echo "https://t.me/proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
-        echo "tg://proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
+    if [[ -n "$public_ip" ]]; then
+        local domain_hex=$(printf "%s" "$domain" | od -An -tx1 | tr -d ' \n')
+        local client_secret="ee${secret}${domain_hex}"
+        
+        print_info "连接信息:"
+        echo -e "服务器IP: ${GREEN}$public_ip${NC}"
+        echo -e "端口: ${GREEN}$port${NC}"
+        echo -e "密钥: ${GREEN}$client_secret${NC}"
         echo ""
-    fi
-
-    if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "${BLUE}Telegram连接链接 (IPv6):${NC}"
-        echo "https://t.me/proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
-        echo "tg://proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
+        echo -e "${BLUE}Telegram连接链接:${NC}"
+        echo "https://t.me/proxy?server=${public_ip}&port=${port}&secret=${client_secret}"
+        echo "tg://proxy?server=${public_ip}&port=${port}&secret=${client_secret}"
     fi
 }
 
@@ -511,166 +396,25 @@ check_dependencies() {
     esac
 }
 
-# 网络环境诊断 (专注于问题诊断和解决方案)
-diagnose_network_issues() {
-    print_line
-    print_info "MTProxy 网络问题诊断"
-    print_line
-
-    # 先进行基本的网络检查
-    detect_network_environment
-
-    print_info "🔍 网络环境分析"
-    echo -e "当前环境: ${GREEN}$NETWORK_TYPE${NC}"
-
-    # 针对不同环境提供详细的诊断和建议
-    case "$NETWORK_TYPE" in
-        "dual_stack")
-            print_success "✓ 双栈环境 - 最佳配置"
-            echo "  📋 诊断结果:"
-            echo "    - IPv4和IPv6都可用"
-            echo "    - MTProxy将优先使用IPv4"
-            echo "    - 客户端可选择IPv4或IPv6连接"
-            ;;
-        "ipv4_only")
-            print_warning "⚠ 纯IPv4环境"
-            echo "  📋 诊断结果:"
-            echo "    - 只有IPv4可用"
-            echo "    - IPv6连接链接将无法使用"
-            echo "  💡 优化建议:"
-            echo "    - 考虑启用IPv6（如果服务商支持）"
-            echo "    - 确保IPv4连接稳定性"
-            ;;
-        "ipv6_only")
-            print_warning "⚠ 纯IPv6环境"
-            echo "  📋 诊断结果:"
-            echo "    - 只有IPv6可用"
-            echo "    - IPv4连接链接将无法使用"
-            echo "  💡 优化建议:"
-            echo "    - 配置IPv4隧道或NAT64"
-            echo "    - 或使用WARP获取IPv4连接"
-            echo "    - 确保客户端支持IPv6"
-            ;;
-        "warp_proxy")
-            print_warning "⚠ WARP代理环境"
-            echo "  📋 诊断结果:"
-            echo "    - 检测到Cloudflare WARP"
-            echo "    - 可能存在连接稳定性问题"
-            echo "  💡 优化建议:"
-            echo "    - 尝试重启WARP: warp-cli disconnect && warp-cli connect"
-            echo "    - 或考虑使用原生IPv6"
-            echo "    - 监控连接稳定性"
-            ;;
-        "unknown")
-            print_error "✗ 网络环境异常"
-            echo "  📋 诊断结果:"
-            echo "    - 无法获取有效的公网IP"
-            echo "    - 可能存在网络连接问题"
-            echo "  🔧 故障排除:"
-            echo "    - 检查网络连接: ping 8.8.8.8"
-            echo "    - 检查DNS解析: nslookup google.com"
-            echo "    - 检查防火墙设置"
-            ;;
-    esac
-
-    echo ""
-
-    # MTProxy特定的诊断
-    if [ -f "./mtp_config" ]; then
-        source ./mtp_config
-        print_info "🔍 MTProxy配置诊断"
-
-        # 检查端口占用
-        if netstat -tulpn 2>/dev/null | grep -q ":$port "; then
-            local process=$(netstat -tulpn 2>/dev/null | grep ":$port " | awk '{print $7}' | head -1)
-            if [[ "$process" == *"mtg"* ]]; then
-                print_success "✓ 端口 $port 被MTProxy正常占用"
-            else
-                print_error "✗ 端口 $port 被其他进程占用: $process"
-                echo "  🔧 解决方案: 停止占用进程或更换端口"
-            fi
-        else
-            print_warning "⚠ 端口 $port 未被占用"
-            echo "  💡 可能原因: MTProxy未启动或启动失败"
-        fi
-
-        # 检查防火墙配置
-        print_info "🔍 防火墙配置检查"
-        case $OS in
-            "rhel")
-                if systemctl is-active firewalld >/dev/null 2>&1; then
-                    if firewall-cmd --list-ports | grep -q "$port/tcp"; then
-                        print_success "✓ Firewalld端口 $port 已开放"
-                    else
-                        print_error "✗ Firewalld端口 $port 未开放"
-                        echo "  🔧 解决方案:"
-                        echo "    firewall-cmd --permanent --add-port=$port/tcp"
-                        echo "    firewall-cmd --permanent --add-port=$web_port/tcp"
-                        echo "    firewall-cmd --reload"
-                    fi
-                else
-                    print_info "ℹ Firewalld未运行"
-                fi
-                ;;
-            "debian")
-                if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
-                    if ufw status | grep -q "$port/tcp"; then
-                        print_success "✓ UFW端口 $port 已开放"
-                    else
-                        print_error "✗ UFW端口 $port 未开放"
-                        echo "  🔧 解决方案:"
-                        echo "    ufw allow $port/tcp"
-                        echo "    ufw allow $web_port/tcp"
-                    fi
-                else
-                    print_info "ℹ UFW未激活或未安装"
-                fi
-                ;;
-            "alpine")
-                print_info "ℹ Alpine Linux通常无需额外防火墙配置"
-                ;;
-        esac
-
-        # 连接测试建议
-        echo ""
-        print_info "🔍 连接测试建议"
-        echo "1. 本地测试: telnet 127.0.0.1 $port"
-        if [[ "$HAS_IPV4" == true ]]; then
-            echo "2. IPv4测试: telnet $PUBLIC_IPV4 $port"
-        fi
-        if [[ "$HAS_IPV6" == true ]]; then
-            echo "3. IPv6测试: telnet $PUBLIC_IPV6 $port"
-        fi
-        echo "4. 使用Telegram客户端测试连接链接"
-
-    else
-        print_warning "⚠ MTProxy配置文件不存在"
-        echo "  💡 建议: 先运行安装程序创建配置"
-    fi
-}
-
 # 自动修复功能
 auto_fix() {
     print_line
     print_info "自动修复功能"
     print_line
 
-    # 网络环境诊断
-    diagnose_network_issues
-
     # 安装缺失的依赖
     print_info "检查并安装缺失的依赖..."
     case $OS in
         "alpine")
             apk update >/dev/null 2>&1
-            apk add --no-cache curl wget procps net-tools netcat-openbsd >/dev/null 2>&1
+            apk add --no-cache curl wget procps net-tools >/dev/null 2>&1
             ;;
         "rhel")
-            $PKG_MANAGER install -y curl wget procps-ng net-tools nc >/dev/null 2>&1
+            $PKG_MANAGER install -y curl wget procps-ng net-tools >/dev/null 2>&1
             ;;
         "debian")
             apt update >/dev/null 2>&1
-            apt install -y curl wget procps net-tools netcat >/dev/null 2>&1
+            apt install -y curl wget procps net-tools >/dev/null 2>&1
             ;;
     esac
     print_success "依赖检查完成"
@@ -692,25 +436,6 @@ auto_fix() {
     chmod +x ./mtg 2>/dev/null
     chmod +x ./*.sh 2>/dev/null
     print_success "权限修复完成"
-
-    # 根据网络环境给出建议
-    print_info "网络环境优化建议..."
-    detect_network_environment
-    case "$NETWORK_TYPE" in
-        "warp_proxy")
-            print_warning "WARP环境建议:"
-            echo "- 考虑重启WARP服务"
-            echo "- 或尝试使用原生IPv6"
-            ;;
-        "ipv6_only")
-            print_warning "IPv6环境建议:"
-            echo "- 确保客户端支持IPv6"
-            echo "- 考虑配置IPv4隧道"
-            ;;
-        "unknown")
-            print_error "网络环境异常，建议检查网络配置"
-            ;;
-    esac
 }
 
 # 端口修改功能
@@ -882,83 +607,6 @@ str_to_hex() {
     printf "%s" "$1" | od -An -tx1 | tr -d ' \n'
 }
 
-# 根据网络环境生成MTG启动参数
-generate_mtg_params() {
-    local client_secret="$1"
-    local proxy_tag="$2"
-    local port="$3"
-    local web_port="$4"
-
-    detect_network_environment
-
-    local bind_addr=""
-    local external_params=""
-    local prefer_ip=""
-
-    case "$NETWORK_TYPE" in
-        "dual_stack")
-            # 双栈环境：绑定所有接口，优先IPv4
-            bind_addr="0.0.0.0:$port"
-            prefer_ip="--prefer-ip=ipv4"
-            if [[ -n "$PUBLIC_IPV4" ]]; then
-                external_params="-4 $PUBLIC_IPV4:$port"
-            fi
-            if [[ -n "$PUBLIC_IPV6" ]]; then
-                external_params="$external_params -6 [$PUBLIC_IPV6]:$port"
-            fi
-            ;;
-        "ipv4_only")
-            # 纯IPv4环境：明确绑定IPv4地址
-            bind_addr="$PUBLIC_IPV4:$port"
-            prefer_ip="--prefer-ip=ipv4"
-            if [[ -n "$PUBLIC_IPV4" ]]; then
-                external_params="-4 $PUBLIC_IPV4:$port"
-            fi
-            ;;
-        "ipv6_only")
-            # 纯IPv6环境：绑定IPv6
-            bind_addr="[::]:$port"
-            prefer_ip="--prefer-ip=ipv6"
-            if [[ -n "$PUBLIC_IPV6" ]]; then
-                external_params="-6 [$PUBLIC_IPV6]:$port"
-            fi
-            ;;
-        "warp_proxy")
-            # WARP代理环境：特殊处理
-            if [[ "$HAS_IPV6" == true ]]; then
-                bind_addr="[::]:$port"
-                prefer_ip="--prefer-ip=ipv6"
-                if [[ -n "$PUBLIC_IPV6" ]]; then
-                    external_params="-6 [$PUBLIC_IPV6]:$port"
-                fi
-            else
-                bind_addr="0.0.0.0:$port"
-                prefer_ip="--prefer-ip=ipv4"
-                if [[ -n "$PUBLIC_IPV4" ]]; then
-                    external_params="-4 $PUBLIC_IPV4:$port"
-                fi
-            fi
-            ;;
-        *)
-            # 默认配置
-            bind_addr="0.0.0.0:$port"
-            prefer_ip="--prefer-ip=ipv4"
-            if [[ -n "$PUBLIC_IPV4" ]]; then
-                external_params="-4 $PUBLIC_IPV4:$port"
-            fi
-            ;;
-    esac
-
-    # 构建完整命令
-    local base_cmd="./mtg run $client_secret"
-    [[ -n "$proxy_tag" ]] && base_cmd="$base_cmd $proxy_tag"
-
-    local full_cmd="$base_cmd -b $bind_addr --multiplex-per-connection 500 $prefer_ip -t 127.0.0.1:$web_port"
-    [[ -n "$external_params" ]] && full_cmd="$full_cmd $external_params"
-
-    echo "$full_cmd"
-}
-
 # 安装依赖
 install_dependencies() {
     print_info "安装系统依赖..."
@@ -1104,18 +752,16 @@ start_mtproxy() {
     # 构建运行命令
     local domain_hex=$(str_to_hex $domain)
     local client_secret="ee${secret}${domain_hex}"
+    local public_ip=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4)
 
     print_info "正在启动MTProxy..."
-    print_info "检测网络环境..."
-
-    # 生成适合当前网络环境的启动参数
-    local mtg_cmd=$(generate_mtg_params "$client_secret" "$proxy_tag" "$port" "$web_port")
-
-    print_debug "网络环境: $NETWORK_TYPE"
-    print_debug "启动命令: $mtg_cmd"
 
     # 启动MTG
-    eval "$mtg_cmd >/dev/null 2>&1 &"
+    if [[ -n "$proxy_tag" ]]; then
+        ./mtg run $client_secret $proxy_tag -b 0.0.0.0:$port --multiplex-per-connection 500 --prefer-ip=ipv6 -t 127.0.0.1:$web_port -4 "$public_ip:$port" >/dev/null 2>&1 &
+    else
+        ./mtg run $client_secret -b 0.0.0.0:$port --multiplex-per-connection 500 --prefer-ip=ipv6 -t 127.0.0.1:$web_port -4 "$public_ip:$port" >/dev/null 2>&1 &
+    fi
 
     echo $! > $pid_file
     sleep 3
@@ -1173,7 +819,8 @@ show_proxy_info() {
     fi
 
     source ./mtp_config
-    detect_network_environment
+    local public_ip=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4)
+    local public_ipv6=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
     local domain_hex=$(str_to_hex $domain)
     local client_secret="ee${secret}${domain_hex}"
 
@@ -1185,54 +832,25 @@ show_proxy_info() {
     fi
 
     echo -e "系统类型: ${PURPLE}$os${NC}"
-    echo -e "网络环境: ${PURPLE}$NETWORK_TYPE${NC}"
-
-    if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "服务器IPv4: ${GREEN}$PUBLIC_IPV4${NC}"
-        [[ "$IS_WARP" == true ]] && echo -e "WARP状态: ${YELLOW}已启用${NC}"
+    echo -e "服务器IPv4: ${GREEN}$public_ip${NC}"
+    if [[ -n "$public_ipv6" && "$public_ipv6" != *"curl:"* && "$public_ipv6" != *"error"* ]]; then
+        echo -e "服务器IPv6: ${GREEN}$public_ipv6${NC}"
     fi
-
-    if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "服务器IPv6: ${GREEN}$PUBLIC_IPV6${NC}"
-    fi
-
-    [[ "$IS_NAT" == true ]] && echo -e "NAT环境: ${YELLOW}是${NC} (本地IP: $LOCAL_IP)"
-
     echo -e "客户端端口: ${GREEN}$port${NC}"
     echo -e "管理端口: ${GREEN}$web_port${NC}"
     echo -e "代理密钥: ${GREEN}$client_secret${NC}"
     echo -e "伪装域名: ${GREEN}$domain${NC}"
     [[ -n "$proxy_tag" ]] && echo -e "推广TAG: ${GREEN}$proxy_tag${NC}"
 
-    # 根据网络环境显示连接链接
-    if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "\n${BLUE}Telegram连接链接 (IPv4):${NC}"
-        echo "https://t.me/proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
-        echo "tg://proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
-    fi
+    echo -e "\n${BLUE}Telegram连接链接 (IPv4):${NC}"
+    echo "https://t.me/proxy?server=${public_ip}&port=${port}&secret=${client_secret}"
+    echo "tg://proxy?server=${public_ip}&port=${port}&secret=${client_secret}"
 
-    if [[ "$HAS_IPV6" == true ]]; then
+    if [[ -n "$public_ipv6" && "$public_ipv6" != *"curl:"* && "$public_ipv6" != *"error"* ]]; then
         echo -e "\n${BLUE}Telegram连接链接 (IPv6):${NC}"
-        echo "https://t.me/proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
-        echo "tg://proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
+        echo "https://t.me/proxy?server=${public_ipv6}&port=${port}&secret=${client_secret}"
+        echo "tg://proxy?server=${public_ipv6}&port=${port}&secret=${client_secret}"
     fi
-
-    # 显示网络环境特定的提示
-    case "$NETWORK_TYPE" in
-        "warp_proxy")
-            echo -e "\n${YELLOW}提示: 检测到WARP代理环境，如果连接有问题请尝试重启服务${NC}"
-            ;;
-        "ipv6_only")
-            echo -e "\n${YELLOW}提示: 纯IPv6环境，确保客户端支持IPv6连接${NC}"
-            ;;
-        "ipv4_only")
-            echo -e "\n${GREEN}提示: 纯IPv4环境，连接应该稳定${NC}"
-            ;;
-        "dual_stack")
-            echo -e "\n${GREEN}提示: 双栈环境，IPv4和IPv6都可用${NC}"
-            ;;
-    esac
-
     print_line
 }
 
@@ -1327,9 +945,8 @@ show_menu() {
     echo "5.  查看代理信息"
     echo "6.  修改端口配置"
     echo "7.  完整系统检查"
-    echo "8.  网络环境诊断"
-    echo "9.  自动修复问题"
-    echo "10. 完全卸载MTProxy"
+    echo "8.  自动修复问题"
+    echo "9.  完全卸载MTProxy"
     echo "0.  退出"
     echo
 }
@@ -1343,7 +960,7 @@ main() {
 
     while true; do
         show_menu
-        read -p "请输入选项 [0-10]: " choice
+        read -p "请输入选项 [0-9]: " choice
 
         case $choice in
             1)
@@ -1381,15 +998,10 @@ main() {
                 ;;
             8)
                 detect_system 2>/dev/null
-                diagnose_network_issues
-                read -p "按回车键继续..."
-                ;;
-            9)
-                detect_system 2>/dev/null
                 auto_fix
                 read -p "按回车键继续..."
                 ;;
-            10)
+            9)
                 uninstall_mtproxy
                 read -p "按回车键继续..."
                 ;;
@@ -1431,9 +1043,6 @@ else
         "check")
             full_system_check
             ;;
-        "diagnose")
-            diagnose_network_issues
-            ;;
         "fix")
             auto_fix
             ;;
@@ -1444,7 +1053,7 @@ else
             uninstall_mtproxy
             ;;
         *)
-            echo "用法: $0 [install|start|stop|restart|status|check|diagnose|fix|ports|uninstall]"
+            echo "用法: $0 [install|start|stop|restart|status|check|fix|ports|uninstall]"
             echo "或直接运行 $0 进入交互模式"
             echo ""
             echo "命令说明:"
@@ -1454,7 +1063,6 @@ else
             echo "  restart   - 重启服务"
             echo "  status    - 查看状态"
             echo "  check     - 完整系统检查"
-            echo "  diagnose  - 网络环境诊断"
             echo "  fix       - 自动修复问题"
             echo "  ports     - 修改端口配置"
             echo "  uninstall - 完全卸载"
