@@ -13,41 +13,13 @@
 ### `mtproxy.sh` - 增强版管理脚本
 提供完整的安装、配置、管理和监控功能，包含进程稳定性解决方案。
 
-```bash
-# 下载脚本并运行
-wget https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy.sh && chmod +x mtproxy.sh && ./mtproxy.sh
-
-# 命令行使用
-./mtproxy.sh install    # 安装
-./mtproxy.sh start      # 启动
-./mtproxy.sh stop       # 停止
-./mtproxy.sh restart    # 重启
-./mtproxy.sh status     # 查看状态
-./mtproxy.sh monitor    # 进程监控
-./mtproxy.sh health     # 健康检查
-./mtproxy.sh uninstall  # 卸载
 ```
-
 ## 🚀 快速开始
 
-### 一键安装（推荐）
-```bash
-# 下载并运行
-wget https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy.sh
-chmod +x mtproxy.sh
-./mtproxy.sh
-
-# 或直接运行
-bash <(curl -fsSL https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy.sh)
-```
-
-**默认配置：**
-- 端口：443
-- 管理端口：8888
-- 伪装域名：azure.microsoft.com
-
 ### 📝 使用说明
-
+```bash
+# 下载脚本并运行
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy.sh && chmod +x mtproxy.sh && ./mtproxy.sh
 **基本使用流程：**
 
 1. **首次安装**：运行脚本选择 `功能1` 进行一键安装并启动
