@@ -184,8 +184,8 @@ detect_system() {
 
 # 网络环境检测
 detect_network_environment() {
-    local ipv4=$(curl -s --connect-timeout 6 https://api.ip.sb/ip -A Mozilla --ipv4 2>/dev/null)
-    local ipv6=$(curl -s --connect-timeout 6 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+    local ipv4=$(curl -s --connect-timeout 3 https://api.ip.sb/ip -A Mozilla --ipv4 2>/dev/null)
+    local ipv6=$(curl -s --connect-timeout 3 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
     local has_ipv4=false
     local has_ipv6=false
     local is_warp=false
@@ -824,7 +824,20 @@ show_proxy_info() {
         return 1
     fi
 
-    ensure_network_detected
+    # 快速网络检测（仅用于菜单显示）
+    if [ -z "$NETWORK_TYPE" ]; then
+        # 使用更快的检测方式
+        local ipv4=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4 2>/dev/null)
+        if [[ -n "$ipv4" && "$ipv4" != *"curl:"* && "$ipv4" != *"error"* ]]; then
+            NETWORK_TYPE="ipv4"
+            HAS_IPV4=true
+            PUBLIC_IPV4="$ipv4"
+        else
+            NETWORK_TYPE="unknown"
+            HAS_IPV4=false
+        fi
+    fi
+    
     local client_secret=$(generate_client_secret)
 
     print_line
@@ -1452,68 +1465,37 @@ uninstall_mtproxy() {
         return 0
     fi
     
-    # 1. 停止MTProxy进程
-    print_info "停止MTProxy进程..."
-    if check_process_status >/dev/null; then
-        local pid=$(check_process_status)
-        kill -TERM $pid 2>/dev/null
-        sleep 2
-        if kill -0 $pid 2>/dev/null; then
-            kill -KILL $pid 2>/dev/null
-        fi
-        print_success "MTProxy进程已停止"
-    else
-        print_info "MTProxy进程未运行"
-    fi
+    print_info "正在卸载MTProxy..."
     
-    # 2. 停止并删除systemd服务
-    print_info "检查并删除systemd服务..."
+    # 1. 停止服务
+    stop_mtproxy
+    
+    # 2. 杀死所有相关进程
+    pkill -f mtg 2>/dev/null
+    pkill -9 -f mtg 2>/dev/null
+    pkill -f mtproxy 2>/dev/null
+    
+    # 3. 停止并删除systemd服务
     if [ -f "/etc/systemd/system/mtproxy.service" ]; then
         systemctl stop mtproxy 2>/dev/null
         systemctl disable mtproxy 2>/dev/null
         rm -f /etc/systemd/system/mtproxy.service
         systemctl daemon-reload 2>/dev/null
-        print_success "systemd服务已删除"
-    else
-        print_info "未发现systemd服务"
     fi
     
-    # 3. 清理相关进程
-    print_info "清理相关进程..."
-    pkill -f mtg 2>/dev/null
-    pkill -f mtproxy 2>/dev/null
-    
-    # 4. 删除文件和目录
-    print_info "删除程序文件..."
+    # 4. 删除所有相关文件
     rm -f ./mtg
     rm -f ./mtp_config
     rm -f ./mtp_config.*
     rm -f $pid_file
     rm -rf ./pid
     rm -rf ./logs
-    rm -f ./mtproxy.sh.*
-    
-    # 额外清理可能存在的临时文件
+    rm -f ./mtg.tar.gz
     rm -f ./mtg.*
     rm -f ./config.*
     rm -f ./*.log
     
-    # 5. 清理防火墙规则（如果存在）
-    print_info "清理防火墙规则..."
-    # 注意：这里不调用load_config，因为配置文件已经被删除
-    # 如果需要清理特定端口的防火墙规则，需要手动指定
-    print_info "防火墙规则清理完成"
-    
-    print_line
-    print_success "✔ MTProxy已完全卸载"
-    print_info "以下文件已删除："
-    echo "  - MTG程序 (./mtg)"
-    echo "  - 配置文件 (./mtp_config)"
-    echo "  - PID文件 (./pid/)"
-    echo "  - 日志目录 (./logs/)"
-    echo "  - systemd服务 (/etc/systemd/system/mtproxy.service)"
-    print_info "管理脚本 (mtproxy.sh) 保留，可用于重新安装"
-    print_line
+    print_success "MTProxy已完全卸载"
 }
 
 # 一键安装并运行
