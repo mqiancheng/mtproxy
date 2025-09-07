@@ -86,7 +86,7 @@ check_network() {
     
     # 检查IPv4连接
     print_info "检查IPv4连接..."
-    local ipv4=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4)
+    local ipv4=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4)
     if [[ -n "$ipv4" && "$ipv4" != *"curl:"* ]]; then
         echo -e "IPv4地址: ${GREEN}$ipv4${NC}"
     else
@@ -95,7 +95,7 @@ check_network() {
     
     # 检查IPv6连接
     print_info "检查IPv6连接..."
-    local ipv6=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+    local ipv6=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
     if [[ -n "$ipv6" && "$ipv6" != *"curl:"* && "$ipv6" != *"error"* ]]; then
         echo -e "IPv6地址: ${GREEN}$ipv6${NC}"
     else
@@ -287,7 +287,7 @@ test_connection() {
     fi
     
     source ./mtp_config
-    local public_ip=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4)
+    local public_ip=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4)
     
     # 测试端口连通性
     print_info "测试端口连通性..."
@@ -317,7 +317,7 @@ test_connection() {
     fi
 
     # 测试IPv6外部连接
-    local public_ipv6=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+    local public_ipv6=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
     if [[ -n "$public_ipv6" && "$public_ipv6" != *"curl:"* && "$public_ipv6" != *"error"* ]]; then
         print_info "测试IPv6外部连接 ([$public_ipv6]:$port)..."
         if timeout 10 bash -c "</dev/tcp/$public_ipv6/$port" 2>/dev/null; then
@@ -752,7 +752,7 @@ start_mtproxy() {
     # 构建运行命令
     local domain_hex=$(str_to_hex $domain)
     local client_secret="ee${secret}${domain_hex}"
-    local public_ip=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4)
+    local public_ip=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4)
 
     print_info "正在启动MTProxy..."
 
@@ -819,8 +819,8 @@ show_proxy_info() {
     fi
 
     source ./mtp_config
-    local public_ip=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv4)
-    local public_ipv6=$(curl -s --connect-timeout 10 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+    local public_ip=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4)
+    local public_ipv6=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
     local domain_hex=$(str_to_hex $domain)
     local client_secret="ee${secret}${domain_hex}"
 
@@ -857,41 +857,114 @@ show_proxy_info() {
 # 进程监控和自动重启
 monitor_mtproxy() {
     print_info "启动MTProxy进程监控..."
-    print_warning "按 Ctrl+C 停止监控"
     
-    local restart_count=0
-    local max_restarts=5
-    local check_interval=30
+    # 检查是否已有监控进程在运行
+    local monitor_pid_file="./pid/monitor.pid"
+    if [ -f "$monitor_pid_file" ]; then
+        local monitor_pid=$(cat $monitor_pid_file)
+        if kill -0 $monitor_pid 2>/dev/null; then
+            print_warning "进程监控已在运行中 (PID: $monitor_pid)"
+            print_info "如需停止监控，请运行: kill $monitor_pid"
+            return 0
+        else
+            rm -f $monitor_pid_file
+        fi
+    fi
     
-    while true; do
-        if [ -f "$pid_file" ]; then
-            local pid=$(cat $pid_file)
-            if kill -0 $pid 2>/dev/null; then
-                print_success "MTProxy运行正常 (PID: $pid)"
-                restart_count=0
-            else
-                print_warning "MTProxy进程已停止，尝试重启..."
-                
-                if [ $restart_count -lt $max_restarts ]; then
-                    start_mtproxy
-                    if [ $? -eq 0 ]; then
-                        restart_count=$((restart_count + 1))
-                        print_success "重启成功 (第${restart_count}次)"
+    # 创建监控脚本
+    local monitor_script="./monitor_script.sh"
+    cat > $monitor_script << 'EOF'
+#!/bin/bash
+# MTProxy进程监控脚本
+
+pid_file="./pid/mtproxy.pid"
+monitor_pid_file="./pid/monitor.pid"
+log_file="./logs/monitor.log"
+
+# 创建必要的目录
+mkdir -p pid logs
+
+# 记录监控进程PID
+echo $$ > $monitor_pid_file
+
+# 监控循环
+restart_count=0
+max_restarts=5
+check_interval=30
+
+echo "$(date): 启动MTProxy进程监控" >> $log_file
+
+while true; do
+    if [ -f "$pid_file" ]; then
+        local pid=$(cat $pid_file)
+        if kill -0 $pid 2>/dev/null; then
+            echo "$(date): MTProxy运行正常 (PID: $pid)" >> $log_file
+            restart_count=0
+        else
+            echo "$(date): MTProxy进程已停止，尝试重启..." >> $log_file
+            
+            if [ $restart_count -lt $max_restarts ]; then
+                # 启动MTProxy
+                if [ -f "./mtp_config" ]; then
+                    source ./mtp_config
+                    local domain_hex=$(printf "%s" "$domain" | od -An -tx1 | tr -d ' \n')
+                    local client_secret="ee${secret}${domain_hex}"
+                    local public_ip=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4)
+                    
+                    if [[ -n "$proxy_tag" ]]; then
+                        ./mtg run $client_secret $proxy_tag -b 0.0.0.0:$port --multiplex-per-connection 500 --prefer-ip=ipv6 -t 127.0.0.1:$web_port -4 "$public_ip:$port" >/dev/null 2>&1 &
                     else
-                        print_error "重启失败"
+                        ./mtg run $client_secret -b 0.0.0.0:$port --multiplex-per-connection 500 --prefer-ip=ipv6 -t 127.0.0.1:$web_port -4 "$public_ip:$port" >/dev/null 2>&1 &
+                    fi
+                    
+                    echo $! > $pid_file
+                    sleep 3
+                    
+                    if kill -0 $(cat $pid_file) 2>/dev/null; then
+                        restart_count=$((restart_count + 1))
+                        echo "$(date): 重启成功 (第${restart_count}次)" >> $log_file
+                    else
+                        echo "$(date): 重启失败" >> $log_file
                     fi
                 else
-                    print_error "重启次数过多，停止监控"
-                    break
+                    echo "$(date): 配置文件不存在，无法重启" >> $log_file
                 fi
+            else
+                echo "$(date): 重启次数过多，停止监控" >> $log_file
+                break
             fi
-        else
-            print_warning "PID文件不存在，尝试启动..."
-            start_mtproxy
         fi
-        
-        sleep $check_interval
-    done
+    else
+        echo "$(date): PID文件不存在，尝试启动..." >> $log_file
+        # 这里可以添加启动逻辑，但通常由用户手动启动
+    fi
+    
+    sleep $check_interval
+done
+
+# 清理
+rm -f $monitor_pid_file
+echo "$(date): 监控进程已停止" >> $log_file
+EOF
+    
+    chmod +x $monitor_script
+    
+    # 启动后台监控
+    nohup $monitor_script >/dev/null 2>&1 &
+    local monitor_pid=$!
+    
+    sleep 2
+    
+    # 检查监控是否启动成功
+    if kill -0 $monitor_pid 2>/dev/null; then
+        print_success "进程监控已启动 (PID: $monitor_pid)"
+        print_info "监控日志: tail -f ./logs/monitor.log"
+        print_info "停止监控: kill $monitor_pid"
+        print_warning "注意: 这是一个额外的监控功能，不影响主要功能"
+    else
+        print_error "进程监控启动失败"
+        rm -f $monitor_script
+    fi
 }
 
 # 创建系统服务
@@ -1078,15 +1151,27 @@ uninstall_mtproxy() {
     # 停止服务
     stop_mtproxy
 
+    # 停止监控进程
+    if [ -f "./pid/monitor.pid" ]; then
+        local monitor_pid=$(cat ./pid/monitor.pid)
+        if kill -0 $monitor_pid 2>/dev/null; then
+            print_info "停止监控进程..."
+            kill $monitor_pid 2>/dev/null
+        fi
+    fi
+
     # 杀死所有相关进程
     pkill -f mtg 2>/dev/null
     pkill -9 -f mtg 2>/dev/null
+    pkill -f monitor_script 2>/dev/null
 
     # 删除文件
     rm -f ./mtg
     rm -f ./mtp_config
     rm -rf ./pid
+    rm -rf ./logs
     rm -f ./mtg.tar.gz
+    rm -f ./monitor_script.sh
 
     print_success "MTProxy已完全卸载"
 }
