@@ -1,7 +1,6 @@
 #!/bin/bash
 
 # MTProxy 增强版管理系统 - 优化版本
-# 取消重复代码，提高可维护性
 # 支持 Alpine Linux, AlmaLinux/RHEL/CentOS, Debian/Ubuntu
 
 WORKDIR=$(dirname $(readlink -f $0))
@@ -1307,12 +1306,12 @@ monitor_mtproxy() {
     done
 }
 
-# 创建systemd服务
+# 创建系统服务
 create_systemd_service() {
-    function_header "创建systemd服务"
+    function_header "创建系统服务"
     
     if [ $EUID -ne 0 ]; then
-        print_error "创建systemd服务需要root权限"
+        print_error "创建系统服务需要root权限"
         return 1
     fi
     
@@ -1320,11 +1319,76 @@ create_systemd_service() {
         return 1
     fi
     
-    local service_file="/etc/systemd/system/mtproxy.service"
     local script_path="$(pwd)/mtproxy.sh"
     
-    print_info "创建systemd服务文件..."
-    cat > $service_file <<EOF
+    # 检测系统类型并创建相应的服务
+    if [[ "$OS" == "alpine" ]]; then
+        # Alpine Linux - 使用OpenRC
+        print_info "检测到Alpine Linux，创建OpenRC服务..."
+        
+        local service_file="/etc/init.d/mtproxy"
+        cat > $service_file <<EOF
+#!/sbin/openrc-run
+
+name="MTProxy"
+description="MTProxy Service"
+command="$script_path"
+command_args="start"
+pidfile="/var/run/mtproxy.pid"
+command_background="yes"
+start_stop_daemon_args="--background --make-pidfile --pidfile \$pidfile"
+
+depend() {
+    need net
+    after net
+}
+
+start() {
+    ebegin "Starting MTProxy"
+    start-stop-daemon --start --background --make-pidfile --pidfile \$pidfile --exec \$command -- \$command_args
+    eend \$?
+}
+
+stop() {
+    ebegin "Stopping MTProxy"
+    start-stop-daemon --stop --pidfile \$pidfile
+    eend \$?
+}
+
+restart() {
+    stop
+    sleep 1
+    start
+}
+EOF
+        
+        chmod +x $service_file
+        
+        # 添加到默认运行级别
+        rc-update add mtproxy default 2>/dev/null
+        
+        print_success "OpenRC服务创建成功"
+        print_info "服务管理命令:"
+        echo "  启动服务: rc-service mtproxy start"
+        echo "  停止服务: rc-service mtproxy stop"
+        echo "  重启服务: rc-service mtproxy restart"
+        echo "  查看状态: rc-service mtproxy status"
+        echo "  开机自启: rc-update add mtproxy default"
+        echo "  取消自启: rc-update del mtproxy default"
+        
+        read -p "是否立即启动服务? (y/N): " start_confirm
+        if [[ "$start_confirm" =~ ^[Yy]$ ]]; then
+            rc-service mtproxy start
+            sleep 2
+            rc-service mtproxy status
+        fi
+        
+    else
+        # 其他系统 - 使用systemd
+        print_info "创建systemd服务文件..."
+        
+        local service_file="/etc/systemd/system/mtproxy.service"
+        cat > $service_file <<EOF
 [Unit]
 Description=MTProxy Service
 After=network.target
@@ -1344,25 +1408,25 @@ StandardError=journal
 [Install]
 WantedBy=multi-user.target
 EOF
-    
-    # 重载systemd并启用服务
-    systemctl daemon-reload
-    systemctl enable mtproxy
-    
-    print_success "systemd服务创建成功"
-    print_info "服务管理命令:"
-    echo "  启动服务: systemctl start mtproxy"
-    echo "  停止服务: systemctl stop mtproxy"
-    echo "  重启服务: systemctl restart mtproxy"
-    echo "  查看状态: systemctl status mtproxy"
-    echo "  查看日志: journalctl -u mtproxy -f"
-    
-    # 询问是否立即启动
-    read -p "是否立即启动systemd服务? (y/N): " start_confirm
-    if [[ "$start_confirm" =~ ^[Yy]$ ]]; then
-        systemctl start mtproxy
-        sleep 2
-        systemctl status mtproxy --no-pager
+        
+        # 重载systemd并启用服务
+        systemctl daemon-reload
+        systemctl enable mtproxy
+        
+        print_success "systemd服务创建成功"
+        print_info "服务管理命令:"
+        echo "  启动服务: systemctl start mtproxy"
+        echo "  停止服务: systemctl stop mtproxy"
+        echo "  重启服务: systemctl restart mtproxy"
+        echo "  查看状态: systemctl status mtproxy"
+        echo "  查看日志: journalctl -u mtproxy -f"
+        
+        read -p "是否立即启动systemd服务? (y/N): " start_confirm
+        if [[ "$start_confirm" =~ ^[Yy]$ ]]; then
+            systemctl start mtproxy
+            sleep 2
+            systemctl status mtproxy --no-pager
+        fi
     fi
 }
 
@@ -1452,6 +1516,91 @@ health_check() {
     fi
     
     print_line
+}
+
+# 安装系统依赖
+install_dependencies() {
+    print_info "安装系统依赖..."
+    
+    case "$PKG_MANAGER" in
+        "apk")
+            apk update
+            apk add --no-cache curl wget tar gzip openssl netstat-nat
+            ;;
+        "yum"|"dnf")
+            $PKG_MANAGER update -y
+            $PKG_MANAGER install -y curl wget tar gzip openssl net-tools
+            ;;
+        "apt")
+            apt update
+            apt install -y curl wget tar gzip openssl net-tools
+            ;;
+        *)
+            print_error "不支持的包管理器: $PKG_MANAGER"
+            return 1
+            ;;
+    esac
+    
+    print_success "依赖安装完成"
+}
+
+# 下载MTG程序
+download_mtg() {
+    print_info "下载MTG ($(get_architecture))..."
+    
+    local arch=$(get_architecture)
+    local mtg_url="https://github.com/9seconds/mtg/releases/latest/download/mtg-linux-$arch"
+    
+    # 尝试下载
+    if curl -L --connect-timeout 10 --retry 3 -o mtg "$mtg_url"; then
+        chmod +x mtg
+        print_success "MTG下载完成"
+        return 0
+    else
+        print_error "MTG下载失败"
+        return 1
+    fi
+}
+
+# 一键安装并运行
+install_and_run() {
+    function_header "开始一键安装MTProxy..."
+    
+    # 检测系统
+    ensure_system_detected
+    
+    # 安装依赖
+    install_dependencies
+    if [ $? -ne 0 ]; then
+        print_error "依赖安装失败"
+        return 1
+    fi
+    
+    # 下载MTG
+    download_mtg
+    if [ $? -ne 0 ]; then
+        print_error "MTG下载失败"
+        return 1
+    fi
+    
+    # 配置MTProxy
+    config_mtproxy
+    if [ $? -ne 0 ]; then
+        print_error "配置失败"
+        return 1
+    fi
+    
+    # 显示防火墙配置提示
+    show_firewall_commands
+    
+    # 启动MTProxy
+    start_mtproxy
+    if [ $? -eq 0 ]; then
+        print_success "安装完成！"
+    else
+        print_error "启动失败，请检查配置"
+        return 1
+    fi
 }
 
 # 完全卸载MTProxy
@@ -1562,7 +1711,7 @@ show_menu() {
     echo "8.  网络环境诊断"
     echo "9.  自动修复问题"
     echo "10. 进程监控和自动重启"
-    echo "11. 创建systemd服务"
+    echo "11. 创建系统服务"
     echo "12. 健康检查"
     echo "13. 完全卸载MTProxy"
     echo "0.  退出"
@@ -1717,7 +1866,7 @@ else
             echo "  fix       - 自动修复问题"
             echo "  ports     - 修改端口配置"
             echo "  monitor   - 进程监控和自动重启"
-            echo "  systemd   - 创建systemd服务"
+            echo "  systemd   - 创建系统服务"
             echo "  health    - 健康检查"
             echo "  uninstall - 完全卸载"
             ;;
