@@ -539,8 +539,8 @@ check_mtproxy_status() {
     fi
     
     # 检查进程状态
-    local pid=$(check_process_status)
-    if [ $? -eq 0 ]; then
+    if check_process_status >/dev/null; then
+        local pid=$(check_process_status)
         echo -e "进程状态: ${GREEN}运行中${NC} (PID: $pid)"
         
         # 检查进程详情
@@ -744,8 +744,8 @@ start_mtproxy() {
     fi
 
     # 检查是否已运行
-    local pid=$(check_process_status)
-    if [ $? -eq 0 ]; then
+    if check_process_status >/dev/null; then
+        local pid=$(check_process_status)
         print_warning "MTProxy已经在运行中 (PID: $pid)"
         return 0
     fi
@@ -783,8 +783,8 @@ start_mtproxy() {
     sleep 3
 
     # 检查启动状态
-    local pid=$(check_process_status)
-    if [ $? -eq 0 ]; then
+    if check_process_status >/dev/null; then
+        local pid=$(check_process_status)
         print_success "MTProxy启动成功 (PID: $pid)"
         print_info "日志文件: $log_file"
         show_proxy_info
@@ -797,8 +797,8 @@ start_mtproxy() {
 
 # 停止MTProxy
 stop_mtproxy() {
-    local pid=$(check_process_status)
-    if [ $? -eq 0 ]; then
+    if check_process_status >/dev/null; then
+        local pid=$(check_process_status)
         print_info "正在停止MTProxy (PID: $pid)..."
         kill -9 $pid 2>/dev/null
         rm -f $pid_file
@@ -828,9 +828,9 @@ show_proxy_info() {
     local client_secret=$(generate_client_secret)
 
     print_line
-    local pid=$(check_process_status)
-    if [ $? -eq 0 ]; then
-        print_success "MTProxy状态: 运行中"
+    if check_process_status >/dev/null; then
+        local pid=$(check_process_status)
+        print_success "MTProxy状态: 运行中 (PID: $pid)"
     else
         print_warning "MTProxy状态: 已停止"
     fi
@@ -1259,8 +1259,8 @@ monitor_mtproxy() {
     local last_restart_time=0
     
     while true; do
-        local pid=$(check_process_status)
-        if [ $? -eq 0 ]; then
+        if check_process_status >/dev/null; then
+            local pid=$(check_process_status)
             print_success "MTProxy运行正常 (PID: $pid)"
             restart_count=0  # 重置重启计数
         else
@@ -1379,8 +1379,8 @@ health_check() {
     fi
     
     # 3. 检查进程状态 (30分)
-    local pid=$(check_process_status)
-    if [ $? -eq 0 ]; then
+    if check_process_status >/dev/null; then
+        local pid=$(check_process_status)
         print_success "✔ MTProxy进程运行正常 (PID: $pid) (+30分)"
         health_score=$((health_score + 30))
         
@@ -1454,8 +1454,8 @@ uninstall_mtproxy() {
     
     # 1. 停止MTProxy进程
     print_info "停止MTProxy进程..."
-    local pid=$(check_process_status)
-    if [ $? -eq 0 ]; then
+    if check_process_status >/dev/null; then
+        local pid=$(check_process_status)
         kill -TERM $pid 2>/dev/null
         sleep 2
         if kill -0 $pid 2>/dev/null; then
