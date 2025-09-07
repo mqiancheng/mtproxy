@@ -1518,6 +1518,24 @@ health_check() {
     print_line
 }
 
+# 生成随机十六进制字符串
+gen_rand_hex() {
+    local length=$1
+    openssl rand -hex $((length/2))
+}
+
+# 获取系统架构
+get_architecture() {
+    local arch=$(uname -m)
+    case "$arch" in
+        "x86_64") echo "amd64" ;;
+        "aarch64") echo "arm64" ;;
+        "armv7l") echo "armv7" ;;
+        "i386"|"i686") echo "386" ;;
+        *) echo "amd64" ;;  # 默认使用amd64
+    esac
+}
+
 # 安装系统依赖
 install_dependencies() {
     print_info "安装系统依赖..."
@@ -1544,6 +1562,70 @@ install_dependencies() {
     print_success "依赖安装完成"
 }
 
+# 配置MTProxy
+config_mtproxy() {
+    function_header "配置MTProxy"
+    
+    # 端口配置
+    read -p "请输入客户端连接端口 (默认 443): " input_port
+    [ -z "$input_port" ] && input_port=443
+    
+    read -p "请输入管理端口 (默认 8888): " input_manage_port
+    [ -z "$input_manage_port" ] && input_manage_port=8888
+    
+    # 域名配置
+    read -p "请输入伪装域名 (默认 azure.microsoft.com): " input_domain
+    [ -z "$input_domain" ] && input_domain="azure.microsoft.com"
+    
+    # TAG配置
+    read -p "请输入推广TAG (可选，直接回车跳过): " input_tag
+    
+    # 生成配置
+    local secret=$(gen_rand_hex 32)
+    
+    cat > ./mtp_config <<EOF
+secret="$secret"
+port=$input_port
+web_port=$input_manage_port
+domain="$input_domain"
+proxy_tag="$input_tag"
+os="$OS"
+pkg_manager="$PKG_MANAGER"
+EOF
+    
+    print_success "配置生成完成"
+}
+
+# 显示防火墙配置提示
+show_firewall_commands() {
+    function_header "防火墙配置提示"
+    
+    # 从配置文件读取端口
+    if [ -f "./mtp_config" ]; then
+        source ./mtp_config
+    fi
+    
+    case "$OS" in
+        "alpine")
+            echo "Alpine Linux 通常不需要额外的防火墙配置"
+            echo "如果使用iptables:"
+            echo "iptables -A INPUT -p tcp --dport $port -j ACCEPT"
+            echo "iptables -A INPUT -p tcp --dport $web_port -j ACCEPT"
+            ;;
+        "rhel")
+            echo "CentOS/RHEL/AlmaLinux 防火墙配置:"
+            echo "firewall-cmd --permanent --add-port=$port/tcp"
+            echo "firewall-cmd --permanent --add-port=$web_port/tcp"
+            echo "firewall-cmd --reload"
+            ;;
+        "debian")
+            echo "Debian/Ubuntu 防火墙配置:"
+            echo "ufw allow $port/tcp"
+            echo "ufw allow $web_port/tcp"
+            ;;
+    esac
+}
+
 # 下载MTG程序
 download_mtg() {
     print_info "下载MTG ($(get_architecture))..."
@@ -1553,11 +1635,19 @@ download_mtg() {
     
     # 尝试下载
     if curl -L --connect-timeout 10 --retry 3 -o mtg "$mtg_url"; then
+        # 检查文件大小，MTG程序应该至少几MB
+        local file_size=$(stat -c%s mtg 2>/dev/null || echo "0")
+        if [ "$file_size" -lt 1000000 ]; then  # 小于1MB说明下载失败
+            print_error "MTG下载失败：文件大小异常 ($file_size bytes)"
+            rm -f mtg
+            return 1
+        fi
+        
         chmod +x mtg
-        print_success "MTG下载完成"
+        print_success "MTG下载完成 ($(($file_size / 1024 / 1024))MB)"
         return 0
     else
-        print_error "MTG下载失败"
+        print_error "MTG下载失败：网络连接错误"
         return 1
     fi
 }
@@ -1633,18 +1723,78 @@ uninstall_mtproxy() {
     fi
     
     # 4. 删除所有相关文件
-    rm -f ./mtg
-    rm -f ./mtp_config
+    print_info "删除程序文件..."
+    
+    # 强制删除MTG程序
+    if [ -f "./mtg" ]; then
+        rm -f ./mtg
+        print_info "已删除: ./mtg"
+    fi
+    
+    # 强制删除配置文件
+    if [ -f "./mtp_config" ]; then
+        rm -f ./mtp_config
+        print_info "已删除: ./mtp_config"
+    fi
+    
+    # 删除配置文件变体
     rm -f ./mtp_config.*
-    rm -f $pid_file
-    rm -rf ./pid
-    rm -rf ./logs
+    
+    # 删除PID文件
+    if [ -f "$pid_file" ]; then
+        rm -f $pid_file
+        print_info "已删除: $pid_file"
+    fi
+    
+    # 删除PID目录
+    if [ -d "./pid" ]; then
+        rm -rf ./pid
+        print_info "已删除: ./pid/"
+    fi
+    
+    # 删除日志目录和文件
+    if [ -d "./logs" ]; then
+        rm -rf ./logs
+        print_info "已删除: ./logs/"
+    fi
+    
+    # 删除其他相关文件
     rm -f ./mtg.tar.gz
     rm -f ./mtg.*
     rm -f ./config.*
     rm -f ./*.log
     
+    # 额外检查：删除可能存在的其他文件
+    for file in mtg mtp_config mtproxy.log; do
+        if [ -f "./$file" ]; then
+            rm -f "./$file"
+            print_info "已删除: ./$file"
+        fi
+    done
+    
+    # 检查是否还有残留文件
+    local remaining_files=$(ls -la | grep -E "(mtg|mtp_config|mtproxy\.log)" | wc -l)
+    if [ "$remaining_files" -gt 0 ]; then
+        print_warning "发现残留文件，尝试强制删除..."
+        ls -la | grep -E "(mtg|mtp_config|mtproxy\.log)"
+        # 强制删除
+        rm -f ./mtg* ./mtp_config* ./mtproxy.log* 2>/dev/null
+    fi
+    
     print_success "MTProxy已完全卸载"
+    
+    # 询问是否删除脚本本身
+    echo
+    read -p "是否删除管理脚本 (mtproxy.sh)? (y/N): " delete_script
+    if [[ "$delete_script" =~ ^[Yy]$ ]]; then
+        if [ -f "./mtproxy.sh" ]; then
+            rm -f ./mtproxy.sh
+            print_success "管理脚本已删除"
+            print_info "如需重新安装，请重新下载脚本"
+        fi
+    else
+        print_info "管理脚本 (mtproxy.sh) 保留，可用于重新安装"
+    fi
 }
 
 # 一键安装并运行
