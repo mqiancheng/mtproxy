@@ -1,6 +1,6 @@
-# MTProxy 通用安装脚本
+# MTProxy 增强版管理脚本
 
-支持多种Linux发行版的MTProxy一键安装和管理脚本。
+支持多种Linux发行版的MTProxy一键安装和管理脚本，包含完整的检查、诊断和修复功能。
 
 ## 🎯 支持的系统
 
@@ -10,14 +10,35 @@
 
 ## 📦 脚本说明
 
-### 1. `quick_install.sh` - 快速一键安装
-最简单的安装方式，使用默认配置快速部署。
+### `mtproxy.sh` - 增强版管理脚本
+提供完整的安装、配置、管理和监控功能，包含进程稳定性解决方案。
 
 ```bash
+# 下载脚本并运行
+wget https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy.sh && chmod +x mtproxy.sh && ./mtproxy.sh
+
+# 命令行使用
+./mtproxy.sh install    # 安装
+./mtproxy.sh start      # 启动
+./mtproxy.sh stop       # 停止
+./mtproxy.sh restart    # 重启
+./mtproxy.sh status     # 查看状态
+./mtproxy.sh monitor    # 进程监控
+./mtproxy.sh health     # 健康检查
+./mtproxy.sh uninstall  # 卸载
+```
+
+## 🚀 快速开始
+
+### 一键安装（推荐）
+```bash
 # 下载并运行
-wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/quick_install.sh
-chmod +x quick_install.sh
-./quick_install.sh
+wget https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy.sh
+chmod +x mtproxy.sh
+./mtproxy.sh
+
+# 或直接运行
+bash <(curl -fsSL https://raw.githubusercontent.com/your-repo/mtproxy/main/mtproxy.sh)
 ```
 
 **默认配置：**
@@ -25,42 +46,20 @@ chmod +x quick_install.sh
 - 管理端口：8888
 - 伪装域名：azure.microsoft.com
 
-### 2. `mtproxy_enhanced.sh` - 完整管理脚本
-提供完整的安装、配置和管理功能。
+### 📝 使用说明
 
+**基本使用流程：**
+
+1. **首次安装**：运行脚本选择 `功能1` 进行一键安装并启动
+2. **进程稳定性**：如果发现代理后台被杀死，建议开启 `功能11` 创建systemd服务
+   - systemd服务可确保进程自动重启和开机启动
+   - 提供更强的进程稳定性和系统级管理
+
+**推荐配置顺序：**
 ```bash
-# 下载脚本
-wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_enhanced.sh
-chmod +x mtproxy_enhanced.sh
-
-# 交互式菜单
-./mtproxy_enhanced.sh
-
-# 命令行使用
-./mtproxy_enhanced.sh install    # 安装
-./mtproxy_enhanced.sh start      # 启动
-./mtproxy_enhanced.sh stop       # 停止
-./mtproxy_enhanced.sh restart    # 重启
-./mtproxy_enhanced.sh status     # 查看状态
-./mtproxy_enhanced.sh uninstall  # 卸载
-```
-
-## 🚀 快速开始
-
-### 方法一：一键安装（推荐新手）
-```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/mqiancheng/mtproxy/main/quick_install.sh)
-```
-
-### 方法二：完整安装
-```bash
-# 下载脚本
-wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy_enhanced.sh
-chmod +x mtproxy_enhanced.sh
-
-# 运行安装
-./mtproxy_enhanced.sh
-# 选择选项 1 进行安装
+./mtproxy.sh
+# 选择 1 - 一键安装并运行MTProxy
+# 测试正常后，选择 11 - 创建systemd服务（推荐）
 ```
 
 ## 📋 功能特性
@@ -71,13 +70,26 @@ chmod +x mtproxy_enhanced.sh
 - 🎛️ **交互式配置** - 友好的配置界面
 - 📊 **状态监控** - 实时查看运行状态
 - 🗑️ **完整卸载** - 彻底清理所有文件
+- 🔧 **进程稳定性** - 解决进程被杀死问题
+- 📈 **健康检查** - 全面的系统健康评估
+- 🚨 **自动修复** - 智能问题诊断和修复
 
 ### 🛠️ 管理功能
-- ▶️ 启动/停止服务
-- 🔄 重启服务
-- 📈 查看运行状态
-- 🔧 重新配置
+- ▶️ 启动/停止/重启服务
+- 📈 查看运行状态和代理信息
+- 🔧 端口配置修改
+- 🚨 进程监控和自动重启
+- 🏥 系统健康检查
+- 🔍 网络环境诊断
+- 🛠️ 自动修复问题
 - 🗑️ 完全卸载
+
+### 🔧 高级功能
+- 📊 **systemd服务支持** - 系统级服务管理
+- 🔄 **进程监控** - 自动检测和重启
+- 📝 **日志记录** - 完整的运行日志
+- 🌐 **网络诊断** - 智能网络环境分析
+- ⚡ **性能优化** - 网络超时优化（6秒）
 
 ## 📖 使用说明
 
@@ -86,19 +98,34 @@ chmod +x mtproxy_enhanced.sh
 
 ```bash
 # 查看状态和连接信息
-./mtproxy_enhanced.sh status
+./mtproxy.sh status
 
 # 停止服务
-./mtproxy_enhanced.sh stop
+./mtproxy.sh stop
 
 # 启动服务
-./mtproxy_enhanced.sh start
+./mtproxy.sh start
 
 # 重启服务
-./mtproxy_enhanced.sh restart
+./mtproxy.sh restart
+
+# 进程监控和自动重启
+./mtproxy.sh monitor
+
+# 健康检查
+./mtproxy.sh health
+
+# 网络环境诊断
+./mtproxy.sh diagnose
+
+# 自动修复问题
+./mtproxy.sh fix
+
+# 创建systemd服务
+./mtproxy.sh systemd
 
 # 完全卸载
-./mtproxy_enhanced.sh uninstall
+./mtproxy.sh uninstall
 ```
 
 ### 配置文件
@@ -119,13 +146,39 @@ chmod +x mtproxy_enhanced.sh
 
 ### 自定义端口
 默认使用443端口，如需修改：
-1. 运行完整安装脚本
-2. 在配置阶段输入自定义端口
+```bash
+# 使用端口修改功能
+./mtproxy.sh ports
+```
 
 ### 推广TAG
 如需使用推广TAG：
 1. 联系 @MTProxybot 获取TAG
 2. 在配置阶段输入TAG
+
+### systemd服务（推荐）
+创建系统级服务，确保开机自启和自动重启：
+```bash
+# 创建systemd服务
+./mtproxy.sh systemd
+
+# 管理服务
+systemctl start mtproxy    # 启动
+systemctl stop mtproxy     # 停止
+systemctl restart mtproxy  # 重启
+systemctl status mtproxy   # 状态
+systemctl enable mtproxy   # 开机自启
+```
+
+### 进程监控
+实时监控进程状态，自动重启：
+```bash
+# 启动监控
+./mtproxy.sh monitor
+
+# 或使用独立监控脚本
+./mtproxy_monitor.sh
+```
 
 ### 防火墙配置
 确保以下端口开放：
@@ -146,11 +199,74 @@ ufw allow 8888/tcp
 # 通常不需要额外配置
 ```
 
+## 🔧 进程稳定性解决方案
+
+### 问题：MTProxy进程经常被杀死
+
+这是一个常见问题，可能的原因包括：
+- 系统资源不足（内存/CPU）
+- 系统重启后未自动启动
+- OOM Killer杀死进程
+- 网络环境变化
+
+### 解决方案
+
+#### 1. 使用进程监控（推荐）
+```bash
+# 启动进程监控
+./mtproxy.sh monitor
+```
+
+#### 2. 创建systemd服务（最佳方案）
+```bash
+# 创建systemd服务
+./mtproxy.sh systemd
+
+# 管理服务
+systemctl start mtproxy    # 启动
+systemctl stop mtproxy     # 停止
+systemctl restart mtproxy  # 重启
+systemctl status mtproxy   # 状态
+systemctl enable mtproxy   # 开机自启
+```
+
+#### 3. 设置定时任务
+```bash
+# 编辑crontab
+crontab -e
+
+# 添加以下配置（每5分钟检查一次）
+*/5 * * * * /path/to/mtproxy/mtproxy.sh start
+```
+
+#### 4. 健康检查
+```bash
+# 定期健康检查
+./mtproxy.sh health
+
+# 查看详细状态
+./mtproxy.sh check
+```
+
 ## 🐛 故障排除
 
 ### 常见问题
 
-**1. 下载失败**
+**1. 进程经常被杀死**
+```bash
+# 检查系统资源
+free -h
+df -h
+top
+
+# 使用监控功能
+./mtproxy.sh monitor
+
+# 创建systemd服务
+./mtproxy.sh systemd
+```
+
+**2. 下载失败**
 ```bash
 # 检查网络连接
 curl -I https://github.com
@@ -159,7 +275,7 @@ curl -I https://github.com
 export https_proxy=http://your-proxy:port
 ```
 
-**2. 端口被占用**
+**3. 端口被占用**
 ```bash
 # 查看端口占用
 netstat -tulpn | grep :443
@@ -168,13 +284,16 @@ netstat -tulpn | grep :443
 pkill -f mtg
 ```
 
-**3. 服务启动失败**
+**4. 服务启动失败**
 ```bash
 # 查看详细错误
 ./mtg run [参数] # 不加后台运行查看错误
+
+# 查看日志
+tail -f ./logs/mtproxy.log
 ```
 
-**4. IPv6不工作**
+**5. IPv6不工作**
 ```bash
 # 检查IPv6支持
 ping6 google.com
@@ -188,6 +307,20 @@ ps aux | grep mtg
 
 # 查看端口监听
 netstat -tulpn | grep mtg
+
+# 查看MTProxy日志
+tail -f ./logs/mtproxy.log
+```
+
+### 系统资源优化
+```bash
+# 检查内存使用
+./mtproxy.sh health
+
+# 如果内存不足，考虑：
+# 1. 增加swap空间
+# 2. 优化系统配置
+# 3. 定期重启服务
 ```
 
 ## 📞 支持
