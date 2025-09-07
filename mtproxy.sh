@@ -819,8 +819,43 @@ show_proxy_info() {
     fi
 
     source ./mtp_config
-    local public_ip=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4)
-    local public_ipv6=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+    
+    # 缓存IP地址，避免每次都重新获取
+    local ip_cache_file="./ip_cache"
+    local public_ip=""
+    local public_ipv6=""
+    
+    # 检查缓存文件是否存在且不超过5分钟
+    if [ -f "$ip_cache_file" ]; then
+        # 兼容不同系统的stat命令
+        local cache_time=0
+        if command -v stat >/dev/null 2>&1; then
+            if stat -c %Y "$ip_cache_file" >/dev/null 2>&1; then
+                cache_time=$(stat -c %Y "$ip_cache_file" 2>/dev/null || echo 0)
+            elif stat -f %m "$ip_cache_file" >/dev/null 2>&1; then
+                cache_time=$(stat -f %m "$ip_cache_file" 2>/dev/null || echo 0)
+            fi
+        fi
+        
+        local current_time=$(date +%s)
+        local time_diff=$((current_time - cache_time))
+        
+        if [ $time_diff -lt 300 ]; then  # 5分钟内使用缓存
+            source "$ip_cache_file"
+        fi
+    fi
+    
+    # 如果缓存无效或不存在，重新获取IP
+    if [ -z "$public_ip" ]; then
+        print_info "获取服务器IP地址..."
+        public_ip=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv4)
+        public_ipv6=$(curl -s --connect-timeout 2 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
+        
+        # 保存到缓存文件
+        echo "public_ip='$public_ip'" > "$ip_cache_file"
+        echo "public_ipv6='$public_ipv6'" >> "$ip_cache_file"
+    fi
+    
     local domain_hex=$(str_to_hex $domain)
     local client_secret="ee${secret}${domain_hex}"
 
@@ -1172,6 +1207,7 @@ uninstall_mtproxy() {
     rm -rf ./logs
     rm -f ./mtg.tar.gz
     rm -f ./monitor_script.sh
+    rm -f ./ip_cache
 
     print_success "MTProxy已完全卸载"
 }
