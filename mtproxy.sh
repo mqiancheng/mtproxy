@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# MTProxy 澧炲己鐗堢鐞嗚剼鏈?- 浼樺寲鐗堟湰
-# 娑堥櫎閲嶅浠ｇ爜锛屾彁楂樺彲缁存姢鎬?# 鏀寔 Alpine Linux, AlmaLinux/RHEL/CentOS, Debian/Ubuntu
+# MTProxy 增强版管理系统 - 优化版本
+# 取消重复代码，提高可维护性
+# 支持 Alpine Linux, AlmaLinux/RHEL/CentOS, Debian/Ubuntu
 
 WORKDIR=$(dirname $(readlink -f $0))
 cd $WORKDIR
 pid_file=$WORKDIR/pid/pid_mtproxy
 
-# 棰滆壊瀹氫箟
+# 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -16,43 +17,47 @@ PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-# 鎵撳嵃鍑芥暟
-print_info() { echo -e "${BLUE}[淇℃伅]${NC} $1"; }
-print_success() { echo -e "${GREEN}[鎴愬姛]${NC} $1"; }
-print_warning() { echo -e "${YELLOW}[璀﹀憡]${NC} $1"; }
-print_error() { echo -e "${RED}[閿欒]${NC} $1"; }
-print_debug() { echo -e "${CYAN}[璋冭瘯]${NC} $1"; }
+# 打印函数
+print_info() { echo -e "${BLUE}[信息]${NC} $1"; }
+print_success() { echo -e "${GREEN}[成功]${NC} $1"; }
+print_warning() { echo -e "${YELLOW}[警告]${NC} $1"; }
+print_error() { echo -e "${RED}[错误]${NC} $1"; }
+print_debug() { echo -e "${CYAN}[调试]${NC} $1"; }
 print_line() { echo "========================================"; }
 
-# ==================== 閫氱敤杈呭姪鍑芥暟 ====================
+# ==================== 通用辅助函数 ====================
 
-# 鍔犺浇閰嶇疆鏂囦欢
+# 加载配置文件
 load_config() {
     if [ ! -f "./mtp_config" ]; then
-        print_error "閰嶇疆鏂囦欢涓嶅瓨鍦紝璇峰厛瀹夎"
+        print_error "配置文件不存在，请先安装"
         return 1
     fi
     source ./mtp_config
     return 0
 }
 
-# 妫€鏌ヨ繘绋嬬姸鎬?check_process_status() {
+# 检查进程状态
+check_process_status() {
     if [ -f "$pid_file" ]; then
         local pid=$(cat $pid_file)
         if kill -0 $pid 2>/dev/null; then
             echo $pid
-            return 0  # 杩愯涓?        else
+            return 0  # 运行中
+        else
             rm -f $pid_file
-            return 1  # 宸插仠姝?        fi
+            return 1  # 已停止
+        fi
     else
-        return 1  # PID鏂囦欢涓嶅瓨鍦?    fi
+        return 1  # PID文件不存在
+    fi
 }
 
-# 閲婃斁绔彛
+# 释放端口
 release_port() {
     local port=$1
     if netstat -tulpn 2>/dev/null | grep -q ":$port "; then
-        print_info "閲婃斁绔彛 $port..."
+        print_info "释放端口 $port..."
         local pids=$(netstat -tulpn 2>/dev/null | grep ":$port " | awk '{print $7}' | sed 's|/.*||')
         for pid in $pids; do
             kill -9 $pid 2>/dev/null
@@ -60,7 +65,7 @@ release_port() {
     fi
 }
 
-# 鏍囧噯鍑芥暟澶撮儴
+# 标准函数头部
 function_header() {
     local title="$1"
     print_line
@@ -68,31 +73,34 @@ function_header() {
     print_line
 }
 
-# 纭繚绯荤粺妫€娴?ensure_system_detected() {
+# 确保系统检测
+ensure_system_detected() {
     if [ -z "$OS" ]; then
         detect_system 2>/dev/null
     fi
 }
 
-# 纭繚缃戠粶鐜妫€娴?ensure_network_detected() {
+# 确保网络环境检测
+ensure_network_detected() {
     if [ -z "$NETWORK_TYPE" ]; then
         detect_network_environment
     fi
 }
 
-# 妫€鏌ョ鍙ｆ槸鍚﹁鍗犵敤
+# 检查端口是否被占用
 is_port_occupied() {
     local port=$1
     netstat -tulpn 2>/dev/null | grep -q ":$port "
 }
 
-# 鑾峰彇绔彛鍗犵敤杩涚▼
+# 获取端口占用进程
 get_port_process() {
     local port=$1
     netstat -tulpn 2>/dev/null | grep ":$port " | awk '{print $7}' | head -1
 }
 
-# 楠岃瘉绔彛鍙?validate_port() {
+# 验证端口号
+validate_port() {
     local port=$1
     if [[ "$port" =~ ^[0-9]+$ ]] && [ $port -ge 1 ] && [ $port -le 65535 ]; then
         return 0
@@ -101,37 +109,39 @@ get_port_process() {
     fi
 }
 
-# 鍒涘缓蹇呰鐩綍
+# 创建必要目录
 create_directories() {
     mkdir -p pid logs
 }
 
-# 鐢熸垚瀹㈡埛绔瘑閽?generate_client_secret() {
+# 生成客户端密钥
+generate_client_secret() {
     local domain_hex=$(str_to_hex $domain)
     echo "ee${secret}${domain_hex}"
 }
 
-# 鏄剧ず闃茬伀澧欓厤缃懡浠?show_firewall_commands() {
+# 显示防火墙配置命令
+show_firewall_commands() {
     local client_port=$1
     local manage_port=$2
 
-    function_header "闃茬伀澧欓厤缃彁绀?
+    function_header "防火墙配置提示"
 
     case $OS in
         "rhel")
-            echo "AlmaLinux/RHEL/CentOS 闃茬伀澧欓厤缃?"
+            echo "AlmaLinux/RHEL/CentOS 防火墙配置"
             echo "firewall-cmd --permanent --add-port=$client_port/tcp"
             echo "firewall-cmd --permanent --add-port=$manage_port/tcp"
             echo "firewall-cmd --reload"
             ;;
         "debian")
-            echo "Debian/Ubuntu 闃茬伀澧欓厤缃?"
+            echo "Debian/Ubuntu 防火墙配置"
             echo "ufw allow $client_port/tcp"
             echo "ufw allow $manage_port/tcp"
             ;;
         "alpine")
-            echo "Alpine Linux 閫氬父涓嶉渶瑕侀澶栫殑闃茬伀澧欓厤缃?
-            echo "濡傛灉浣跨敤iptables:"
+            echo "Alpine Linux 通常不需要额外的防火墙配置"
+            echo "如果使用iptables:"
             echo "iptables -A INPUT -p tcp --dport $client_port -j ACCEPT"
             echo "iptables -A INPUT -p tcp --dport $manage_port -j ACCEPT"
             ;;
@@ -139,9 +149,10 @@ create_directories() {
     print_line
 }
 
-# ==================== 绯荤粺妫€娴嬪嚱鏁?====================
+# ==================== 系统检测函数 ====================
 
-# 绯荤粺妫€娴?detect_system() {
+# 系统检测
+detect_system() {
     if [[ -f /etc/alpine-release ]]; then
         OS="alpine"
         PKG_MANAGER="apk"
@@ -166,12 +177,13 @@ create_directories() {
             DISTRO="Debian $(cat /etc/debian_version)"
         fi
     else
-        print_error "涓嶆敮鎸佺殑鎿嶄綔绯荤粺"
+        print_error "不支持的操作系"
         exit 1
     fi
 }
 
-# 缃戠粶鐜妫€娴?detect_network_environment() {
+# 网络环境检测
+detect_network_environment() {
     local ipv4=$(curl -s --connect-timeout 6 https://api.ip.sb/ip -A Mozilla --ipv4 2>/dev/null)
     local ipv6=$(curl -s --connect-timeout 6 https://api.ip.sb/ip -A Mozilla --ipv6 2>/dev/null)
     local has_ipv4=false
@@ -179,31 +191,31 @@ create_directories() {
     local is_warp=false
     local is_nat=false
 
-    # 妫€鏌Pv4
+    # 检查IPv4
     if [[ -n "$ipv4" && "$ipv4" != *"curl:"* && "$ipv4" != *"error"* ]]; then
         has_ipv4=true
-        # 妫€鏌ユ槸鍚︿负WARP (Cloudflare IP娈?
+        # 检查是否为WARP (Cloudflare IP段)
         if [[ "$ipv4" =~ ^(162\.159\.|104\.28\.|172\.67\.|104\.16\.) ]]; then
             is_warp=true
         fi
     fi
 
-    # 妫€鏌Pv6
+    # 检查IPv6
     if [[ -n "$ipv6" && "$ipv6" != *"curl:"* && "$ipv6" != *"error"* ]]; then
         has_ipv6=true
-        # 妫€鏌ユ槸鍚︿负WARP IPv6
+        # 检查是否为WARP IPv6
         if [[ "$ipv6" =~ ^2606:4700: ]]; then
             is_warp=true
         fi
     fi
 
-    # 妫€鏌ユ槸鍚︿负NAT鐜
+    # 检查是否为NAT环境
     local local_ip=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'src \K\S+' | head -1)
     if [[ -n "$local_ip" && "$local_ip" != "$ipv4" ]]; then
         is_nat=true
     fi
 
-    # 纭畾缃戠粶鐜绫诲瀷
+    # 确定网络环境类型
     if [[ "$has_ipv4" == true && "$has_ipv6" == true && "$is_warp" == false ]]; then
         NETWORK_TYPE="dual_stack"
     elif [[ "$has_ipv4" == true && "$has_ipv6" == false ]]; then
@@ -216,7 +228,7 @@ create_directories() {
         NETWORK_TYPE="unknown"
     fi
 
-    # 瀵煎嚭鐜鍙橀噺
+    # 导出环境变量
     export NETWORK_TYPE
     export HAS_IPV4=$has_ipv4
     export HAS_IPV6=$has_ipv6
@@ -227,27 +239,28 @@ create_directories() {
     export LOCAL_IP="$local_ip"
 }
 
-# 鑾峰彇鏋舵瀯
+# 获取架构
 get_architecture() {
     case $(uname -m) in
     i386|i686) echo "386" ;;
     x86_64) echo "amd64" ;;
     aarch64) echo "arm64" ;;
     arm*) echo "armv6l" ;;
-    *) print_error "涓嶆敮鎸佺殑鏋舵瀯: $(uname -m)" && exit 1 ;;
+    *) print_error "不支持的架构: $(uname -m)" && exit 1 ;;
     esac
 }
 
-# 鐢熸垚闅忔満瀛楃涓?gen_rand_hex() {
+# 生成随机字符串
+gen_rand_hex() {
     dd if=/dev/urandom bs=1 count=500 status=none 2>/dev/null | od -An -tx1 | tr -d ' \n' | head -c $1
 }
 
-# 瀛楃涓茶浆鍗佸叚杩涘埗
+# 字符串转十六进制
 str_to_hex() {
     printf "%s" "$1" | od -An -tx1 | tr -d ' \n'
 }
 
-# 鏍规嵁缃戠粶鐜鐢熸垚MTG鍚姩鍙傛暟
+# 根据网络环境生成MTG启动参数
 generate_mtg_params() {
     local client_secret="$1"
     local proxy_tag="$2"
@@ -262,7 +275,7 @@ generate_mtg_params() {
 
     case "$NETWORK_TYPE" in
         "dual_stack")
-            # 鍙屾爤鐜锛氱粦瀹氭墍鏈夋帴鍙ｏ紝浼樺厛IPv4
+            # 双栈环境，绑定所有接口，优先IPv4
             bind_addr="0.0.0.0:$port"
             prefer_ip="--prefer-ip=ipv4"
             if [[ -n "$PUBLIC_IPV4" ]]; then
@@ -273,7 +286,7 @@ generate_mtg_params() {
             fi
             ;;
         "ipv4_only")
-            # 绾疘Pv4鐜锛氭槑纭粦瀹欼Pv4鍦板潃
+            # 纯IPv4环境，明确绑定IPv4地址
             bind_addr="$PUBLIC_IPV4:$port"
             prefer_ip="--prefer-ip=ipv4"
             if [[ -n "$PUBLIC_IPV4" ]]; then
@@ -281,7 +294,7 @@ generate_mtg_params() {
             fi
             ;;
         "ipv6_only")
-            # 绾疘Pv6鐜锛氱粦瀹欼Pv6
+            # 纯IPv6环境，绑定IPv6
             bind_addr="[::]:$port"
             prefer_ip="--prefer-ip=ipv6"
             if [[ -n "$PUBLIC_IPV6" ]]; then
@@ -289,7 +302,8 @@ generate_mtg_params() {
             fi
             ;;
         "warp_proxy")
-            # WARP浠ｇ悊鐜锛氱壒娈婂鐞?            if [[ "$HAS_IPV6" == true ]]; then
+            # WARP代理环境，特殊处理
+            if [[ "$HAS_IPV6" == true ]]; then
                 bind_addr="[::]:$port"
                 prefer_ip="--prefer-ip=ipv6"
                 if [[ -n "$PUBLIC_IPV6" ]]; then
@@ -304,7 +318,7 @@ generate_mtg_params() {
             fi
             ;;
         *)
-            # 榛樿閰嶇疆
+            # 默认配置
             bind_addr="0.0.0.0:$port"
             prefer_ip="--prefer-ip=ipv4"
             if [[ -n "$PUBLIC_IPV4" ]]; then
@@ -313,7 +327,7 @@ generate_mtg_params() {
             ;;
     esac
 
-    # 鏋勫缓瀹屾暣鍛戒护
+    # 构建完整命令
     local base_cmd="./mtg run $client_secret"
     [[ -n "$proxy_tag" ]] && base_cmd="$base_cmd $proxy_tag"
 
@@ -323,244 +337,261 @@ generate_mtg_params() {
     echo "$full_cmd"
 }
 
-# ==================== 妫€鏌ュ拰璇婃柇鍑芥暟 ====================
+# ==================== 检查和诊断函数 ====================
 
-# 绯荤粺淇℃伅妫€鏌?check_system_info() {
-    function_header "绯荤粺淇℃伅妫€鏌?
+# 系统信息检查
+check_system_info() {
+    function_header "系统信息检查"
     
-    echo -e "鎿嶄綔绯荤粺: ${GREEN}$DISTRO${NC}"
-    echo -e "鍖呯鐞嗗櫒: ${GREEN}$PKG_MANAGER${NC}"
-    echo -e "绯荤粺鏋舵瀯: ${GREEN}$(uname -m)${NC}"
-    echo -e "鍐呮牳鐗堟湰: ${GREEN}$(uname -r)${NC}"
-    echo -e "杩愯鏃堕棿: ${GREEN}$(uptime | awk '{print $3,$4}' | sed 's/,//')${NC}"
+    echo -e "操作系统: ${GREEN}$DISTRO${NC}"
+    echo -e "包管理器: ${GREEN}$PKG_MANAGER${NC}"
+    echo -e "系统架构: ${GREEN}$(uname -m)${NC}"
+    echo -e "内核版本: ${GREEN}$(uname -r)${NC}"
+    echo -e "运行时间: ${GREEN}$(uptime | awk '{print $3,$4}' | sed 's/,//')${NC}"
     
-    # 妫€鏌ュ唴瀛?    local mem_total=$(free -h | awk '/^Mem:/ {print $2}')
+    # 检查内存
+    local mem_total=$(free -h | awk '/^Mem:/ {print $2}')
     local mem_used=$(free -h | awk '/^Mem:/ {print $3}')
-    echo -e "鍐呭瓨浣跨敤: ${GREEN}$mem_used / $mem_total${NC}"
+    echo -e "内存使用: ${GREEN}$mem_used / $mem_total${NC}"
     
-    # 妫€鏌ョ鐩樼┖闂?    local disk_usage=$(df -h . | awk 'NR==2 {print $5}')
-    echo -e "纾佺洏浣跨敤: ${GREEN}$disk_usage${NC}"
+    # 检查磁盘空间
+    local disk_usage=$(df -h . | awk 'NR==2 {print $5}')
+    echo -e "磁盘使用: ${GREEN}$disk_usage${NC}"
 }
 
-# 缃戠粶妫€鏌?check_network() {
-    function_header "缃戠粶杩炴帴妫€鏌ヤ笌鐜妫€娴?
+# 网络检查
+check_network() {
+    function_header "网络连接检查及环境检测"
 
     detect_network_environment
 
-    # 鏄剧ず缃戠粶鐜淇℃伅
-    echo -e "缃戠粶鐜绫诲瀷: ${GREEN}$NETWORK_TYPE${NC}"
+    # 显示网络环境信息
+    echo -e "网络环境类型: ${GREEN}$NETWORK_TYPE${NC}"
 
-    # 妫€鏌Pv4杩炴帴
-    print_info "妫€鏌Pv4杩炴帴..."
+    # 检查IPv4连接
+    print_info "检查IPv4连接..."
     if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "IPv4鍦板潃: ${GREEN}$PUBLIC_IPV4${NC}"
-        [[ "$IS_WARP" == true ]] && echo -e "WARP妫€娴? ${YELLOW}鏄?{NC}"
+        echo -e "IPv4地址: ${GREEN}$PUBLIC_IPV4${NC}"
+        [[ "$IS_WARP" == true ]] && echo -e "WARP检测: ${YELLOW}是${NC}"
     else
-        echo -e "IPv4杩炴帴: ${RED}澶辫触${NC}"
+        echo -e "IPv4连接: ${RED}失败${NC}"
     fi
 
-    # 妫€鏌Pv6杩炴帴
-    print_info "妫€鏌Pv6杩炴帴..."
+    # 检查IPv6连接
+    print_info "检查IPv6连接..."
     if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "IPv6鍦板潃: ${GREEN}$PUBLIC_IPV6${NC}"
+        echo -e "IPv6地址: ${GREEN}$PUBLIC_IPV6${NC}"
     else
-        echo -e "IPv6杩炴帴: ${YELLOW}涓嶅彲鐢?{NC}"
+        echo -e "IPv6连接: ${YELLOW}不可用${NC}"
     fi
 
-    # NAT妫€娴?    if [[ "$IS_NAT" == true ]]; then
-        echo -e "NAT鐜: ${YELLOW}鏄?{NC} (鏈湴IP: $LOCAL_IP)"
+    # NAT检测
+    if [[ "$IS_NAT" == true ]]; then
+        echo -e "NAT环境: ${YELLOW}是${NC} (本地IP: $LOCAL_IP)"
     else
-        echo -e "NAT鐜: ${GREEN}鍚?{NC}"
+        echo -e "NAT环境: ${GREEN}否${NC}"
     fi
 
-    # 妫€鏌NS瑙ｆ瀽
-    print_info "妫€鏌NS瑙ｆ瀽..."
+    # 检查DNS解析
+    print_info "检查DNS解析..."
     if nslookup google.com >/dev/null 2>&1; then
-        echo -e "DNS瑙ｆ瀽: ${GREEN}姝ｅ父${NC}"
+        echo -e "DNS解析: ${GREEN}正常${NC}"
     else
-        echo -e "DNS瑙ｆ瀽: ${RED}寮傚父${NC}"
+        echo -e "DNS解析: ${RED}异常${NC}"
     fi
 
-    # 妫€鏌ョ綉缁滄帴鍙?    print_info "缃戠粶鎺ュ彛淇℃伅:"
+    # 检查网络接口信息
+    print_info "网络接口信息:"
     ip addr show | grep -E "inet |inet6 " | grep -v "127.0.0.1" | grep -v "::1" | while read line; do
         echo -e "  ${CYAN}$line${NC}"
     done
 
-    # 鏄剧ず鐜鐗瑰畾鐨勬彁绀?    echo ""
-    print_info "鐜鍒嗘瀽:"
+    # 显示环境特定的提示
+    echo ""
+    print_info "环境分析:"
     case "$NETWORK_TYPE" in
         "dual_stack")
-            echo -e "${GREEN}鉁?鍙屾爤鐜锛孖Pv4鍜孖Pv6閮藉彲鐢紝杩炴帴搴旇绋冲畾${NC}"
+            echo -e "${GREEN}✔ 双栈环境，IPv4 和 IPv6 均可用，连接应该稳定${NC}"
             ;;
         "ipv4_only")
-            echo -e "${YELLOW}鈿?绾疘Pv4鐜锛孖Pv6杩炴帴灏嗕笉鍙敤${NC}"
+            echo -e "${YELLOW}⚠ 纯IPv4环境，IPv6 连接将不可用${NC}"
             ;;
         "ipv6_only")
-            echo -e "${YELLOW}鈿?绾疘Pv6鐜锛岀‘淇濆鎴风鏀寔IPv6${NC}"
+            echo -e "${YELLOW}⚠ 纯IPv6环境，确保客户端支持IPv6${NC}"
             ;;
         "warp_proxy")
-            echo -e "${YELLOW}鈿?WARP浠ｇ悊鐜锛屽彲鑳藉瓨鍦ㄨ繛鎺ョǔ瀹氭€ч棶棰?{NC}"
+            echo -e "${YELLOW}⚠ WARP代理环境，可能存在连接稳定性问题${NC}"
             ;;
         "unknown")
-            echo -e "${RED}鉁?缃戠粶鐜寮傚父锛屽缓璁繍琛岃瘖鏂姛鑳?{NC}"
+            echo -e "${RED}✘ 网络环境异常，建议运行诊断功能${NC}"
             ;;
     esac
 }
 
-# 绔彛妫€鏌?check_ports() {
-    function_header "绔彛浣跨敤鎯呭喌妫€鏌?
+# 端口检查
+check_ports() {
+    function_header "端口使用情况检查"
     
-    # 妫€鏌ュ父鐢ㄧ鍙?    local common_ports=(22 80 443 8080 8443 8888 9999)
+    # 检查常用端口
+    local common_ports=(22 80 443 8080 8443 8888 9999)
     for port in "${common_ports[@]}"; do
         if is_port_occupied $port; then
             local process=$(get_port_process $port)
-            echo -e "绔彛 $port: ${RED}琚崰鐢?{NC} ($process)"
+            echo -e "端口 $port: ${RED}被占用${NC} ($process)"
         else
-            echo -e "绔彛 $port: ${GREEN}鍙敤${NC}"
+            echo -e "端口 $port: ${GREEN}可用${NC}"
         fi
     done
     
-    # 濡傛灉鏈夐厤缃枃浠讹紝妫€鏌ラ厤缃殑绔彛
+    # 如果有配置文件，检查配置的端口
     if load_config; then
         echo ""
-        print_info "MTProxy閰嶇疆绔彛妫€鏌?"
+        print_info "MTProxy配置端口检查"
         
         if is_port_occupied $port; then
             local process=$(get_port_process $port)
-            echo -e "瀹㈡埛绔鍙?$port: ${RED}琚崰鐢?{NC} ($process)"
+            echo -e "客户端端口 $port: ${RED}被占用${NC} ($process)"
         else
-            echo -e "瀹㈡埛绔鍙?$port: ${GREEN}鍙敤${NC}"
+            echo -e "客户端端口 $port: ${GREEN}可用${NC}"
         fi
         
         if is_port_occupied $web_port; then
             local process=$(get_port_process $web_port)
-            echo -e "绠＄悊绔彛 $web_port: ${RED}琚崰鐢?{NC} ($process)"
+            echo -e "管理端口 $web_port: ${RED}被占用${NC} ($process)"
         else
-            echo -e "绠＄悊绔彛 $web_port: ${GREEN}鍙敤${NC}"
+            echo -e "管理端口 $web_port: ${GREEN}可用${NC}"
         fi
     fi
 }
 
-# 闃茬伀澧欐鏌?check_firewall() {
-    function_header "闃茬伀澧欑姸鎬佹鏌?
+# 防火墙检查
+check_firewall() {
+    function_header "防火墙状态检查"
     
     case $OS in
         "rhel")
             if command -v firewall-cmd >/dev/null 2>&1; then
                 if systemctl is-active firewalld >/dev/null 2>&1; then
-                    echo -e "Firewalld: ${GREEN}杩愯涓?{NC}"
+                    echo -e "Firewalld: ${GREEN}运行中${NC}"
                     if load_config; then
                         local port_open=$(firewall-cmd --list-ports | grep -c "$port/tcp")
                         local web_port_open=$(firewall-cmd --list-ports | grep -c "$web_port/tcp")
-                        echo -e "绔彛 $port/tcp: $([ $port_open -gt 0 ] && echo -e "${GREEN}宸插紑鏀?{NC}" || echo -e "${RED}鏈紑鏀?{NC}")"
-                        echo -e "绔彛 $web_port/tcp: $([ $web_port_open -gt 0 ] && echo -e "${GREEN}宸插紑鏀?{NC}" || echo -e "${RED}鏈紑鏀?{NC}")"
+                        echo -e "端口 $port/tcp: $([ $port_open -gt 0 ] && echo -e "${GREEN}已开放${NC}" || echo -e "${RED}未开放${NC}")"
+                        echo -e "端口 $web_port/tcp: $([ $web_port_open -gt 0 ] && echo -e "${GREEN}已开放${NC}" || echo -e "${RED}未开放${NC}")"
                     fi
                 else
-                    echo -e "Firewalld: ${YELLOW}鏈繍琛?{NC}"
+                    echo -e "Firewalld: ${YELLOW}未运行${NC}"
                 fi
             else
-                echo -e "Firewalld: ${YELLOW}鏈畨瑁?{NC}"
+                echo -e "Firewalld: ${YELLOW}未安装${NC}"
             fi
             ;;
         "debian")
             if command -v ufw >/dev/null 2>&1; then
                 local ufw_status=$(ufw status | head -1)
                 if [[ "$ufw_status" == *"active"* ]]; then
-                    echo -e "UFW: ${GREEN}婵€娲?{NC}"
+                    echo -e "UFW: ${GREEN}激活${NC}"
                     if load_config; then
-                        ufw status | grep -q "$port/tcp" && echo -e "绔彛 $port/tcp: ${GREEN}宸插紑鏀?{NC}" || echo -e "绔彛 $port/tcp: ${RED}鏈紑鏀?{NC}"
-                        ufw status | grep -q "$web_port/tcp" && echo -e "绔彛 $web_port/tcp: ${GREEN}宸插紑鏀?{NC}" || echo -e "绔彛 $web_port/tcp: ${RED}鏈紑鏀?{NC}"
+                        ufw status | grep -q "$port/tcp" && echo -e "端口 $port/tcp: ${GREEN}已开放${NC}" || echo -e "端口 $port/tcp: ${RED}未开放${NC}"
+                        ufw status | grep -q "$web_port/tcp" && echo -e "端口 $web_port/tcp: ${GREEN}已开放${NC}" || echo -e "端口 $web_port/tcp: ${RED}未开放${NC}"
                     fi
                 else
-                    echo -e "UFW: ${YELLOW}鏈縺娲?{NC}"
+                    echo -e "UFW: ${YELLOW}未激活${NC}"
                 fi
             else
-                echo -e "UFW: ${YELLOW}鏈畨瑁?{NC}"
+                echo -e "UFW: ${YELLOW}未安装${NC}"
             fi
             ;;
         "alpine")
             if command -v iptables >/dev/null 2>&1; then
                 local iptables_rules=$(iptables -L INPUT -n | wc -l)
-                echo -e "iptables瑙勫垯鏁? ${GREEN}$iptables_rules${NC}"
+                echo -e "iptables规则数: ${GREEN}$iptables_rules${NC}"
             else
-                echo -e "iptables: ${YELLOW}鏈畨瑁?{NC}"
+                echo -e "iptables: ${YELLOW}未安装${NC}"
             fi
             ;;
     esac
 }
 
-# MTProxy鐘舵€佹鏌?check_mtproxy_status() {
-    function_header "MTProxy鐘舵€佹鏌?
+# MTProxy状态检查
+check_mtproxy_status() {
+    function_header "MTProxy状态检查"
     
-    # 妫€鏌ラ厤缃枃浠?    if load_config; then
-        echo -e "閰嶇疆鏂囦欢: ${GREEN}瀛樺湪${NC}"
-        echo -e "瀹㈡埛绔鍙? ${GREEN}$port${NC}"
-        echo -e "绠＄悊绔彛: ${GREEN}$web_port${NC}"
-        echo -e "浼鍩熷悕: ${GREEN}$domain${NC}"
-        [[ -n "$proxy_tag" ]] && echo -e "鎺ㄥ箍TAG: ${GREEN}$proxy_tag${NC}" || echo -e "鎺ㄥ箍TAG: ${YELLOW}鏈缃?{NC}"
+    # 检查配置文件
+    if load_config; then
+        echo -e "配置文件: ${GREEN}存在${NC}"
+        echo -e "客户端端口: ${GREEN}$port${NC}"
+        echo -e "管理端口: ${GREEN}$web_port${NC}"
+        echo -e "伪装域名: ${GREEN}$domain${NC}"
+        [[ -n "$proxy_tag" ]] && echo -e "推广TAG: ${GREEN}$proxy_tag${NC}" || echo -e "推广TAG: ${YELLOW}未设置${NC}"
     else
         return 1
     fi
     
-    # 妫€鏌TG绋嬪簭
+    # 检查MTG程序
     if [ -f "./mtg" ]; then
-        echo -e "MTG绋嬪簭: ${GREEN}瀛樺湪${NC}"
-        local mtg_version=$(./mtg --version 2>/dev/null | head -1 || echo "鏈煡鐗堟湰")
-        echo -e "MTG鐗堟湰: ${GREEN}$mtg_version${NC}"
+        echo -e "MTG程序: ${GREEN}存在${NC}"
+        local mtg_version=$(./mtg --version 2>/dev/null | head -1 || echo "未知版本")
+        echo -e "MTG版本: ${GREEN}$mtg_version${NC}"
     else
-        echo -e "MTG绋嬪簭: ${RED}涓嶅瓨鍦?{NC}"
+        echo -e "MTG程序: ${RED}不存在${NC}"
         return 1
     fi
     
-    # 妫€鏌ヨ繘绋嬬姸鎬?    local pid=$(check_process_status)
+    # 检查进程状态
+    local pid=$(check_process_status)
     if [ $? -eq 0 ]; then
-        echo -e "杩涚▼鐘舵€? ${GREEN}杩愯涓?{NC} (PID: $pid)"
+        echo -e "进程状态: ${GREEN}运行中${NC} (PID: $pid)"
         
-        # 妫€鏌ヨ繘绋嬭鎯?        local process_info=$(ps aux | grep $pid | grep -v grep | head -1)
-        echo -e "杩涚▼淇℃伅: ${CYAN}$process_info${NC}"
+        # 检查进程详情
+        local process_info=$(ps aux | grep $pid | grep -v grep | head -1)
+        echo -e "进程信息: ${CYAN}$process_info${NC}"
         
-        # 妫€鏌ョ鍙ｇ洃鍚?        if is_port_occupied $port; then
-            echo -e "绔彛鐩戝惉: ${GREEN}姝ｅ父${NC} ($port)"
+        # 检查端口监听
+        if is_port_occupied $port; then
+            echo -e "端口监听: ${GREEN}正常${NC} ($port)"
         else
-            echo -e "绔彛鐩戝惉: ${RED}寮傚父${NC} ($port)"
+            echo -e "端口监听: ${RED}异常${NC} ($port)"
         fi
     else
-        echo -e "杩涚▼鐘舵€? ${YELLOW}鏈繍琛?{NC} (鏃燩ID鏂囦欢)"
+        echo -e "进程状态: ${YELLOW}未运行${NC} (无PID文件)"
     fi
     
-    # 妫€鏌ユ墍鏈塵tg杩涚▼
+    # 检查所有mtg进程
     local mtg_processes=$(ps aux | grep -v grep | grep mtg | wc -l)
     if [ $mtg_processes -gt 0 ]; then
-        echo -e "MTG杩涚▼鏁? ${GREEN}$mtg_processes${NC}"
+        echo -e "MTG进程数: ${GREEN}$mtg_processes${NC}"
         ps aux | grep -v grep | grep mtg | while read line; do
             echo -e "  ${CYAN}$line${NC}"
         done
     else
-        echo -e "MTG杩涚▼鏁? ${YELLOW}0${NC}"
+        echo -e "MTG进程数: ${YELLOW}0${NC}"
     fi
 }
 
-# 渚濊禆妫€鏌?check_dependencies() {
-    function_header "渚濊禆妫€鏌?
+# 依赖检查
+check_dependencies() {
+    function_header "依赖检查"
     
     local deps=("curl" "wget" "netstat" "ps" "kill" "tar" "od")
     
     for dep in "${deps[@]}"; do
         if command -v $dep >/dev/null 2>&1; then
-            echo -e "$dep: ${GREEN}宸插畨瑁?{NC}"
+            echo -e "$dep: ${GREEN}已安装${NC}"
         else
-            echo -e "$dep: ${RED}鏈畨瑁?{NC}"
+            echo -e "$dep: ${RED}未安装${NC}"
         fi
     done
     
-    # 妫€鏌ョ壒瀹氱郴缁熺殑鍖?    case $OS in
+    # 检查特定系统的包
+    case $OS in
         "alpine")
             local alpine_deps=("procps" "net-tools")
             for dep in "${alpine_deps[@]}"; do
                 if apk info -e $dep >/dev/null 2>&1; then
-                    echo -e "$dep: ${GREEN}宸插畨瑁?{NC}"
+                    echo -e "$dep: ${GREEN}已安装${NC}"
                 else
-                    echo -e "$dep: ${RED}鏈畨瑁?{NC}"
+                    echo -e "$dep: ${RED}未安装${NC}"
                 fi
             done
             ;;
@@ -568,9 +599,9 @@ generate_mtg_params() {
             local rhel_deps=("procps-ng" "net-tools")
             for dep in "${rhel_deps[@]}"; do
                 if rpm -q $dep >/dev/null 2>&1; then
-                    echo -e "$dep: ${GREEN}宸插畨瑁?{NC}"
+                    echo -e "$dep: ${GREEN}已安装${NC}"
                 else
-                    echo -e "$dep: ${RED}鏈畨瑁?{NC}"
+                    echo -e "$dep: ${RED}未安装${NC}"
                 fi
             done
             ;;
@@ -578,25 +609,25 @@ generate_mtg_params() {
             local debian_deps=("procps" "net-tools")
             for dep in "${debian_deps[@]}"; do
                 if dpkg -l | grep -q "^ii  $dep "; then
-                    echo -e "$dep: ${GREEN}宸插畨瑁?{NC}"
+                    echo -e "$dep: ${GREEN}已安装${NC}"
                 else
-                    echo -e "$dep: ${RED}鏈畨瑁?{NC}"
+                    echo -e "$dep: ${RED}未安装${NC}"
                 fi
             done
             ;;
     esac
 }
 
-# ==================== 鏍稿績鍔熻兘鍑芥暟 ====================
+# ==================== 核心功能函数 ====================
 
-# 涓嬭浇MTG
+# 下载MTG
 download_mtg() {
     local arch=$(get_architecture)
     local url="https://github.com/9seconds/mtg/releases/download/v1.0.11/mtg-1.0.11-linux-$arch.tar.gz"
 
-    print_info "涓嬭浇MTG ($arch)..."
+    print_info "下载MTG ($arch)..."
     wget $url -O mtg.tar.gz -q --timeout=30 || {
-        print_error "涓嬭浇澶辫触锛岃妫€鏌ョ綉缁滆繛鎺?
+        print_error "下载失败，请检查网络连接"
         return 1
     }
 
@@ -605,16 +636,16 @@ download_mtg() {
     rm -f mtg.tar.gz
 
     if [ -f "./mtg" ]; then
-        print_success "MTG涓嬭浇瀹屾垚"
+        print_success "MTG下载完成"
     else
-        print_error "MTG瀹夎澶辫触"
+        print_error "MTG安装失败"
         return 1
     fi
 }
 
-# 瀹夎渚濊禆
+# 安装依赖
 install_dependencies() {
-    print_info "瀹夎绯荤粺渚濊禆..."
+    print_info "安装系统依赖..."
     case $OS in
         "alpine")
             apk update && apk add --no-cache curl wget procps net-tools
@@ -628,27 +659,27 @@ install_dependencies() {
     esac
 
     if [ $? -eq 0 ]; then
-        print_success "渚濊禆瀹夎瀹屾垚"
+        print_success "依赖安装完成"
     else
-        print_error "渚濊禆瀹夎澶辫触"
+        print_error "依赖安装失败"
         return 1
     fi
 }
 
-# 閰嶇疆MTProxy
+# 配置MTProxy
 config_mtproxy() {
-    function_header "閰嶇疆MTProxy"
+    function_header "配置MTProxy"
 
-    # 绔彛閰嶇疆
+    # 端口配置
     while true; do
-        read -p "璇疯緭鍏ュ鎴风杩炴帴绔彛 (榛樿 443): " input_port
+        read -p "请输入客户端连接端口 (默认 443): " input_port
         [ -z "$input_port" ] && input_port=443
 
         if validate_port $input_port; then
             if is_port_occupied $input_port; then
-                print_warning "绔彛 $input_port 宸茶鍗犵敤"
+                print_warning "端口 $input_port 已占用"
                 get_port_process $input_port
-                read -p "鏄惁缁х画浣跨敤姝ょ鍙? (y/N): " continue_port
+                read -p "是否继续使用此端口? (y/N): " continue_port
                 if [[ "$continue_port" == "y" || "$continue_port" == "Y" ]]; then
                     break
                 fi
@@ -656,21 +687,21 @@ config_mtproxy() {
                 break
             fi
         else
-            print_error "璇疯緭鍏ユ湁鏁堢殑绔彛鍙?[1-65535]"
+            print_error "请输入有效的端口号 [1-65535]"
         fi
     done
 
-    # 绠＄悊绔彛閰嶇疆
+    # 管理端口配置
     while true; do
-        read -p "璇疯緭鍏ョ鐞嗙鍙?(榛樿 8888): " input_manage_port
+        read -p "请输入管理端口 (默认 8888): " input_manage_port
         [ -z "$input_manage_port" ] && input_manage_port=8888
 
         if validate_port $input_manage_port; then
             if [ $input_manage_port -eq $input_port ]; then
-                print_error "绠＄悊绔彛涓嶈兘涓庡鎴风绔彛鐩稿悓"
+                print_error "管理端口不能与客户端端口相同"
             elif is_port_occupied $input_manage_port; then
-                print_warning "绔彛 $input_manage_port 宸茶鍗犵敤"
-                read -p "鏄惁缁х画浣跨敤姝ょ鍙? (y/N): " continue_port
+                print_warning "端口 $input_manage_port 已占用"
+                read -p "是否继续使用此端口? (y/N): " continue_port
                 if [[ "$continue_port" == "y" || "$continue_port" == "Y" ]]; then
                     break
                 fi
@@ -678,18 +709,18 @@ config_mtproxy() {
                 break
             fi
         else
-            print_error "璇疯緭鍏ユ湁鏁堢殑绔彛鍙?[1-65535]"
+            print_error "请输入有效的端口号 [1-65535]"
         fi
     done
 
-    # 鍩熷悕閰嶇疆
-    read -p "璇疯緭鍏ヤ吉瑁呭煙鍚?(榛樿 azure.microsoft.com): " input_domain
+    # 域名配置
+    read -p "请输入伪装域名 (默认 azure.microsoft.com): " input_domain
     [ -z "$input_domain" ] && input_domain="azure.microsoft.com"
 
-    # TAG閰嶇疆
-    read -p "璇疯緭鍏ユ帹骞縏AG (鍙€夛紝鐩存帴鍥炶溅璺宠繃): " input_tag
+    # TAG配置
+    read -p "请输入推广TAG (可选，直接回车跳过): " input_tag
 
-    # 鐢熸垚閰嶇疆
+    # 生成配置
     local secret=$(gen_rand_hex 32)
 
     cat > ./mtp_config <<EOF
@@ -702,89 +733,92 @@ os="$OS"
 pkg_manager="$PKG_MANAGER"
 EOF
 
-    print_success "閰嶇疆鐢熸垚瀹屾垚"
+    print_success "配置生成完成"
     show_firewall_commands $input_port $input_manage_port
 }
 
-# 鍚姩MTProxy
+# 启动MTProxy
 start_mtproxy() {
     if ! load_config; then
         return 1
     fi
 
-    # 妫€鏌ユ槸鍚﹀凡杩愯
+    # 检查是否已运行
     local pid=$(check_process_status)
     if [ $? -eq 0 ]; then
-        print_warning "MTProxy宸茬粡鍦ㄨ繍琛屼腑 (PID: $pid)"
+        print_warning "MTProxy已经在运行中 (PID: $pid)"
         return 0
     fi
 
-    # 妫€鏌TG绋嬪簭
+    # 检查MTG程序
     if [ ! -f "./mtg" ]; then
-        print_error "MTG绋嬪簭涓嶅瓨鍦紝璇烽噸鏂板畨瑁?
+        print_error "MTG程序不存在，请重新安装"
         return 1
     fi
 
-    # 閲婃斁绔彛
+    # 释放端口
     release_port $port
     release_port $web_port
 
-    # 鍒涘缓蹇呰鐩綍
+    # 创建必要目录
     create_directories
 
-    # 鏋勫缓杩愯鍛戒护
+    # 构建运行命令
     local client_secret=$(generate_client_secret)
 
-    print_info "姝ｅ湪鍚姩MTProxy..."
-    print_info "妫€娴嬬綉缁滅幆澧?.."
+    print_info "正在启动MTProxy..."
+    print_info "检测网络环境..."
 
-    # 鐢熸垚閫傚悎褰撳墠缃戠粶鐜鐨勫惎鍔ㄥ弬鏁?    local mtg_cmd=$(generate_mtg_params "$client_secret" "$proxy_tag" "$port" "$web_port")
+    # 生成适合当前网络环境的启动参数
+    local mtg_cmd=$(generate_mtg_params "$client_secret" "$proxy_tag" "$port" "$web_port")
 
-    print_debug "缃戠粶鐜: $NETWORK_TYPE"
-    print_debug "鍚姩鍛戒护: $mtg_cmd"
+    print_debug "网络环境: $NETWORK_TYPE"
+    print_debug "启动命令: $mtg_cmd"
 
-    # 鍚姩MTG (娣诲姞鏃ュ織杈撳嚭)
+    # 启动MTG (添加日志输出)
     local log_file="./logs/mtproxy.log"
     eval "$mtg_cmd >> $log_file 2>&1 &"
 
     echo $! > $pid_file
     sleep 3
 
-    # 妫€鏌ュ惎鍔ㄧ姸鎬?    local pid=$(check_process_status)
+    # 检查启动状态
+    local pid=$(check_process_status)
     if [ $? -eq 0 ]; then
-        print_success "MTProxy鍚姩鎴愬姛 (PID: $pid)"
-        print_info "鏃ュ織鏂囦欢: $log_file"
+        print_success "MTProxy启动成功 (PID: $pid)"
+        print_info "日志文件: $log_file"
         show_proxy_info
     else
-        print_error "MTProxy鍚姩澶辫触"
-        print_info "鏌ョ湅鏃ュ織: tail -f $log_file"
+        print_error "MTProxy启动失败"
+        print_info "查看日志: tail -f $log_file"
         return 1
     fi
 }
 
-# 鍋滄MTProxy
+# 停止MTProxy
 stop_mtproxy() {
     local pid=$(check_process_status)
     if [ $? -eq 0 ]; then
-        print_info "姝ｅ湪鍋滄MTProxy (PID: $pid)..."
+        print_info "正在停止MTProxy (PID: $pid)..."
         kill -9 $pid 2>/dev/null
         rm -f $pid_file
     fi
 
-    # 棰濆纭繚鎵€鏈塵tg杩涚▼琚潃姝?    pkill -f mtg 2>/dev/null
+    # 额外确保所有mtg进程被杀死
+    pkill -f mtg 2>/dev/null
 
     sleep 1
 
-    # 妫€鏌ユ槸鍚﹁繕鏈塵tg杩涚▼
+    # 检查是否还有mtg进程
     if pgrep -f mtg >/dev/null 2>&1; then
-        print_warning "浠嶆湁MTG杩涚▼鍦ㄨ繍琛岋紝寮哄埗缁堟..."
+        print_warning "仍有MTG进程在运行，强制终止..."
         pkill -9 -f mtg 2>/dev/null
     fi
 
-    print_success "MTProxy宸插仠姝?
+    print_success "MTProxy已停止"
 }
 
-# 鏄剧ず浠ｇ悊淇℃伅
+# 显示代理信息
 show_proxy_info() {
     if ! load_config; then
         return 1
@@ -796,67 +830,68 @@ show_proxy_info() {
     print_line
     local pid=$(check_process_status)
     if [ $? -eq 0 ]; then
-        print_success "MTProxy鐘舵€? 杩愯涓?
+        print_success "MTProxy状态: 运行中"
     else
-        print_warning "MTProxy鐘舵€? 宸插仠姝?
+        print_warning "MTProxy状态: 已停止"
     fi
 
-    echo -e "绯荤粺绫诲瀷: ${PURPLE}$os${NC}"
-    echo -e "缃戠粶鐜: ${PURPLE}$NETWORK_TYPE${NC}"
+    echo -e "系统类型: ${PURPLE}$os${NC}"
+    echo -e "网络环境: ${PURPLE}$NETWORK_TYPE${NC}"
 
     if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "鏈嶅姟鍣↖Pv4: ${GREEN}$PUBLIC_IPV4${NC}"
-        [[ "$IS_WARP" == true ]] && echo -e "WARP鐘舵€? ${YELLOW}宸插惎鐢?{NC}"
+        echo -e "服务器IPv4: ${GREEN}$PUBLIC_IPV4${NC}"
+        [[ "$IS_WARP" == true ]] && echo -e "WARP状态: ${YELLOW}已启用${NC}"
     fi
 
     if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "鏈嶅姟鍣↖Pv6: ${GREEN}$PUBLIC_IPV6${NC}"
+        echo -e "服务器IPv6: ${GREEN}$PUBLIC_IPV6${NC}"
     fi
 
-    [[ "$IS_NAT" == true ]] && echo -e "NAT鐜: ${YELLOW}鏄?{NC} (鏈湴IP: $LOCAL_IP)"
+    [[ "$IS_NAT" == true ]] && echo -e "NAT环境: ${YELLOW}是${NC} (本地IP: $LOCAL_IP)"
 
-    echo -e "瀹㈡埛绔鍙? ${GREEN}$port${NC}"
-    echo -e "绠＄悊绔彛: ${GREEN}$web_port${NC}"
-    echo -e "浠ｇ悊瀵嗛挜: ${GREEN}$client_secret${NC}"
-    echo -e "浼鍩熷悕: ${GREEN}$domain${NC}"
-    [[ -n "$proxy_tag" ]] && echo -e "鎺ㄥ箍TAG: ${GREEN}$proxy_tag${NC}"
+    echo -e "客户端端口: ${GREEN}$port${NC}"
+    echo -e "管理端口: ${GREEN}$web_port${NC}"
+    echo -e "代理密钥: ${GREEN}$client_secret${NC}"
+    echo -e "伪装域名: ${GREEN}$domain${NC}"
+    [[ -n "$proxy_tag" ]] && echo -e "推广TAG: ${GREEN}$proxy_tag${NC}"
 
-    # 鏍规嵁缃戠粶鐜鏄剧ず杩炴帴閾炬帴
+    # 根据网络环境显示连接链接
     if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "\n${BLUE}Telegram杩炴帴閾炬帴 (IPv4):${NC}"
+        echo -e "\n${BLUE}Telegram连接链接 (IPv4):${NC}"
         echo "https://t.me/proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
         echo "tg://proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
     fi
 
     if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "\n${BLUE}Telegram杩炴帴閾炬帴 (IPv6):${NC}"
+        echo -e "\n${BLUE}Telegram连接链接 (IPv6):${NC}"
         echo "https://t.me/proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
         echo "tg://proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
     fi
 
-    # 鏄剧ず缃戠粶鐜鐗瑰畾鐨勬彁绀?    case "$NETWORK_TYPE" in
+    # 显示网络环境特定的提示
+    case "$NETWORK_TYPE" in
         "warp_proxy")
-            echo -e "\n${YELLOW}鎻愮ず: 妫€娴嬪埌WARP浠ｇ悊鐜锛屽鏋滆繛鎺ユ湁闂璇峰皾璇曢噸鍚湇鍔?{NC}"
+            echo -e "\n${YELLOW}注意: 检测到WARP代理环境，如果连接有问题请尝试重启服务${NC}"
             ;;
         "ipv6_only")
-            echo -e "\n${YELLOW}鎻愮ず: 绾疘Pv6鐜锛岀‘淇濆鎴风鏀寔IPv6杩炴帴${NC}"
+            echo -e "\n${YELLOW}注意: 纯IPv6环境，确保客户端支持IPv6${NC}"
             ;;
         "ipv4_only")
-            echo -e "\n${GREEN}鎻愮ず: 绾疘Pv4鐜锛岃繛鎺ュ簲璇ョǔ瀹?{NC}"
+            echo -e "\n${GREEN}注意: 纯IPv4环境，连接应该正常${NC}"
             ;;
         "dual_stack")
-            echo -e "\n${GREEN}鎻愮ず: 鍙屾爤鐜锛孖Pv4鍜孖Pv6閮藉彲鐢?{NC}"
+            echo -e "\n${GREEN}注意: 双栈环境，IPv4 和 IPv6 均可用${NC}"
             ;;
     esac
 
     print_line
 }
 
-# ==================== 楂樼骇鍔熻兘鍑芥暟 ====================
+# ==================== 高级功能函数 ====================
 
-# 杩炴帴娴嬭瘯
+# 连接测试
 test_connection() {
-    function_header "杩炴帴娴嬭瘯"
+    function_header "连接测试"
     
     if ! load_config; then
         return 1
@@ -864,225 +899,231 @@ test_connection() {
     
     local public_ip=$(curl -s --connect-timeout 6 https://api.ip.sb/ip -A Mozilla --ipv4)
     
-    # 娴嬭瘯绔彛杩為€氭€?    print_info "娴嬭瘯绔彛杩為€氭€?.."
+    # 测试端口连通性
+    print_info "测试端口连通性..."
     if timeout 5 bash -c "</dev/tcp/127.0.0.1/$port" 2>/dev/null; then
-        echo -e "鏈湴绔彛 $port: ${GREEN}鍙繛鎺?{NC}"
+        echo -e "本地端口 $port: ${GREEN}可连接${NC}"
     else
-        echo -e "鏈湴绔彛 $port: ${RED}鏃犳硶杩炴帴${NC}"
+        echo -e "本地端口 $port: ${RED}无法连接${NC}"
     fi
     
     if timeout 5 bash -c "</dev/tcp/127.0.0.1/$web_port" 2>/dev/null; then
-        echo -e "绠＄悊绔彛 $web_port: ${GREEN}鍙繛鎺?{NC}"
+        echo -e "管理端口 $web_port: ${GREEN}可连接${NC}"
     else
-        echo -e "绠＄悊绔彛 $web_port: ${RED}鏃犳硶杩炴帴${NC}"
+        echo -e "管理端口 $web_port: ${RED}无法连接${NC}"
     fi
     
-    # 娴嬭瘯澶栭儴杩炴帴
-    print_info "娴嬭瘯澶栭儴杩炴帴..."
+    # 测试外部连接
+    print_info "测试外部连接..."
 
     ensure_network_detected
 
-    # 娴嬭瘯IPv4澶栭儴杩炴帴
+    # 测试IPv4外部连接
     if [[ "$HAS_IPV4" == true && -n "$PUBLIC_IPV4" ]]; then
-        print_info "娴嬭瘯IPv4澶栭儴杩炴帴 ($PUBLIC_IPV4:$port)..."
+        print_info "测试IPv4外部连接 ($PUBLIC_IPV4:$port)..."
         if timeout 10 bash -c "</dev/tcp/$PUBLIC_IPV4/$port" 2>/dev/null; then
-            echo -e "IPv4澶栭儴绔彛 $port: ${GREEN}鍙繛鎺?{NC}"
+            echo -e "IPv4外部端口 $port: ${GREEN}可连接${NC}"
         else
-            echo -e "IPv4澶栭儴绔彛 $port: ${RED}鏃犳硶杩炴帴${NC}"
+            echo -e "IPv4外部端口 $port: ${RED}无法连接${NC}"
             if [[ "$IS_NAT" == true ]]; then
-                echo -e "  ${YELLOW}鎻愮ず: 妫€娴嬪埌NAT鐜锛屽彲鑳介渶瑕佺鍙ｆ槧灏?{NC}"
+                echo -e "  ${YELLOW}注意: 检测到NAT环境，可能需要端口映射${NC}"
             fi
         fi
     fi
 
-    # 娴嬭瘯IPv6澶栭儴杩炴帴
+    # 测试IPv6外部连接
     if [[ "$HAS_IPV6" == true && -n "$PUBLIC_IPV6" ]]; then
-        print_info "娴嬭瘯IPv6澶栭儴杩炴帴 ([$PUBLIC_IPV6]:$port)..."
-        # IPv6杩炴帴娴嬭瘯闇€瑕佺壒娈婂鐞?        if command -v nc >/dev/null 2>&1; then
+        print_info "测试IPv6外部连接 ([$PUBLIC_IPV6]:$port)..."
+        # IPv6连接测试需要特殊处理
+        if command -v nc >/dev/null 2>&1; then
             if timeout 10 nc -6 -z "$PUBLIC_IPV6" "$port" 2>/dev/null; then
-                echo -e "IPv6澶栭儴绔彛 $port: ${GREEN}鍙繛鎺?{NC}"
+                echo -e "IPv6外部端口 $port: ${GREEN}可连接${NC}"
             else
-                echo -e "IPv6澶栭儴绔彛 $port: ${RED}鏃犳硶杩炴帴${NC}"
+                echo -e "IPv6外部端口 $port: ${RED}无法连接${NC}"
             fi
         else
-            echo -e "IPv6澶栭儴绔彛 $port: ${YELLOW}鏃犳硶娴嬭瘯 (缂哄皯nc宸ュ叿)${NC}"
+            echo -e "IPv6外部端口 $port: ${YELLOW}无法测试 (缺少nc工具)${NC}"
         fi
     else
-        echo -e "IPv6杩炴帴: ${YELLOW}涓嶅彲鐢紝璺宠繃IPv6杩炴帴娴嬭瘯${NC}"
+        echo -e "IPv6连接: ${YELLOW}不可用，跳过IPv6连接测试${NC}"
     fi
 
-    # 鐢熸垚杩炴帴淇℃伅
+    # 生成连接信息
     local client_secret=$(generate_client_secret)
 
-    print_info "杩炴帴淇℃伅:"
-    echo -e "缃戠粶鐜: ${GREEN}$NETWORK_TYPE${NC}"
+    print_info "连接信息:"
+    echo -e "网络环境: ${GREEN}$NETWORK_TYPE${NC}"
 
     if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "鏈嶅姟鍣↖Pv4: ${GREEN}$PUBLIC_IPV4${NC}"
+        echo -e "服务器IPv4: ${GREEN}$PUBLIC_IPV4${NC}"
     fi
     if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "鏈嶅姟鍣↖Pv6: ${GREEN}$PUBLIC_IPV6${NC}"
+        echo -e "服务器IPv6: ${GREEN}$PUBLIC_IPV6${NC}"
     fi
 
-    echo -e "绔彛: ${GREEN}$port${NC}"
-    echo -e "瀵嗛挜: ${GREEN}$client_secret${NC}"
+    echo -e "端口: ${GREEN}$port${NC}"
+    echo -e "密钥: ${GREEN}$client_secret${NC}"
     echo ""
 
-    # 鐢熸垚杩炴帴閾炬帴
+    # 生成连接链接
     if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "${BLUE}Telegram杩炴帴閾炬帴 (IPv4):${NC}"
+        echo -e "${BLUE}Telegram连接链接 (IPv4):${NC}"
         echo "https://t.me/proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
         echo "tg://proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
         echo ""
     fi
 
     if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "${BLUE}Telegram杩炴帴閾炬帴 (IPv6):${NC}"
+        echo -e "${BLUE}Telegram连接链接 (IPv6):${NC}"
         echo "https://t.me/proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
         echo "tg://proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
     fi
 }
 
-# 缃戠粶鐜璇婃柇
+# 网络环境诊断
 diagnose_network_issues() {
-    function_header "MTProxy 缃戠粶闂璇婃柇"
+    function_header "MTProxy 网络问题诊断"
 
-    # 鍏堣繘琛屽熀鏈殑缃戠粶妫€鏌?    ensure_network_detected
+    # 首先进行基本的网络检测
+    ensure_network_detected
 
-    print_info "馃攳 缃戠粶鐜鍒嗘瀽"
-    echo -e "褰撳墠鐜: ${GREEN}$NETWORK_TYPE${NC}"
+    print_info "📡 网络环境分析"
+    echo -e "当前环境: ${GREEN}$NETWORK_TYPE${NC}"
 
-    # 閽堝涓嶅悓鐜鎻愪緵璇︾粏鐨勮瘖鏂拰寤鸿
+    # 针对不同环境提供详细的诊断和建议
     case "$NETWORK_TYPE" in
         "dual_stack")
-            print_success "鉁?鍙屾爤鐜 - 鏈€浣抽厤缃?
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - IPv4鍜孖Pv6閮藉彲鐢?
-            echo "    - MTProxy灏嗕紭鍏堜娇鐢↖Pv4"
-            echo "    - 瀹㈡埛绔彲閫夋嫨IPv4鎴朓Pv6杩炴帴"
+            print_success "✔ 双栈环境 - 最佳配置"
+            echo "  📊 诊断结果:"
+            echo "    - IPv4 和 IPv6 均可用"
+            echo "    - MTProxy 将优先使用IPv4"
+            echo "    - 客户端可选择IPv4 或 IPv6 连接"
             ;;
         "ipv4_only")
-            print_warning "鈿?绾疘Pv4鐜"
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - 鍙湁IPv4鍙敤"
-            echo "    - IPv6杩炴帴閾炬帴灏嗘棤娉曚娇鐢?
-            echo "  馃挕 浼樺寲寤鸿:"
-            echo "    - 鑰冭檻鍚敤IPv6锛堝鏋滄湇鍔″晢鏀寔锛?
-            echo "    - 纭繚IPv4杩炴帴绋冲畾鎬?
+            print_warning "⚠ 纯IPv4环境"
+            echo "  📊 诊断结果:"
+            echo "    - 只有IPv4 可用"
+            echo "    - IPv6 连接链接将无法使用"
+            echo "  🛠 优化建议:"
+            echo "    - 考虑启用IPv6（如果服务商支持）"
+            echo "    - 确保IPv4 连接稳定性"
             ;;
         "ipv6_only")
-            print_warning "鈿?绾疘Pv6鐜"
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - 鍙湁IPv6鍙敤"
-            echo "    - IPv4杩炴帴閾炬帴灏嗘棤娉曚娇鐢?
-            echo "  馃挕 浼樺寲寤鸿:"
-            echo "    - 閰嶇疆IPv4闅ч亾鎴朜AT64"
-            echo "    - 鎴栦娇鐢╓ARP鑾峰彇IPv4杩炴帴"
-            echo "    - 纭繚瀹㈡埛绔敮鎸両Pv6"
+            print_warning "⚠ 纯IPv6环境"
+            echo "  📊 诊断结果:"
+            echo "    - 只有IPv6 可用"
+            echo "    - IPv4 连接链接将无法使用"
+            echo "  🛠 优化建议:"
+            echo "    - 配置IPv4 隧道或 NAT64"
+            echo "    - 或使用WARP 获取IPv4 连接"
+            echo "    - 确保客户端支持IPv6"
             ;;
         "warp_proxy")
-            print_warning "鈿?WARP浠ｇ悊鐜"
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - 妫€娴嬪埌Cloudflare WARP"
-            echo "    - 鍙兘瀛樺湪杩炴帴绋冲畾鎬ч棶棰?
-            echo "  馃挕 浼樺寲寤鸿:"
-            echo "    - 灏濊瘯閲嶅惎WARP: warp-cli disconnect && warp-cli connect"
-            echo "    - 鎴栬€冭檻浣跨敤鍘熺敓IPv6"
-            echo "    - 鐩戞帶杩炴帴绋冲畾鎬?
+            print_warning "⚠ WARP代理环境"
+            echo "  📊 诊断结果:"
+            echo "    - 检测到Cloudflare WARP"
+            echo "    - 可能存在连接稳定性问题"
+            echo "  🛠 优化建议:"
+            echo "    - 尝试重启WARP: warp-cli disconnect && warp-cli connect"
+            echo "    - 或尝试使用原生IPv6"
+            echo "    - 监控连接稳定性"
             ;;
         "unknown")
-            print_error "鉁?缃戠粶鐜寮傚父"
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - 鏃犳硶鑾峰彇鏈夋晥鐨勫叕缃慖P"
-            echo "    - 鍙兘瀛樺湪缃戠粶杩炴帴闂"
-            echo "  馃敡 鏁呴殰鎺掗櫎:"
-            echo "    - 妫€鏌ョ綉缁滆繛鎺? ping 8.8.8.8"
-            echo "    - 妫€鏌NS瑙ｆ瀽: nslookup google.com"
-            echo "    - 妫€鏌ラ槻鐏璁剧疆"
+            print_error "✘ 网络环境异常"
+            echo "  📊 诊断结果:"
+            echo "    - 无法获取有效的公网IP"
+            echo "    - 可能存在网络连接问题"
+            echo "  🔧 故障排除:"
+            echo "    - 检查网络连接: ping 8.8.8.8"
+            echo "    - 检查DNS解析: nslookup google.com"
+            echo "    - 检查防火墙设置"
             ;;
     esac
 
     echo ""
 
-    # MTProxy鐗瑰畾鐨勮瘖鏂?    if load_config; then
-        print_info "馃攳 MTProxy閰嶇疆璇婃柇"
+    # MTProxy特定的诊断
+    if load_config; then
+        print_info "📡 MTProxy配置诊断"
 
-        # 妫€鏌ョ鍙ｅ崰鐢?        if is_port_occupied $port; then
+        # 检查端口占用
+        if is_port_occupied $port; then
             local process=$(get_port_process $port)
             if [[ "$process" == *"mtg"* ]]; then
-                print_success "鉁?绔彛 $port 琚玀TProxy姝ｅ父鍗犵敤"
+                print_success "✔ 端口 $port 被MTProxy正常占用"
             else
-                print_error "鉁?绔彛 $port 琚叾浠栬繘绋嬪崰鐢? $process"
-                echo "  馃敡 瑙ｅ喅鏂规: 鍋滄鍗犵敤杩涚▼鎴栨洿鎹㈢鍙?
+                print_error "✘ 端口 $port 被其他进程占用: $process"
+                echo "  🔧 解决方案: 停止占用进程或更改端口"
             fi
         else
-            print_warning "鈿?绔彛 $port 鏈鍗犵敤"
-            echo "  馃挕 鍙兘鍘熷洜: MTProxy鏈惎鍔ㄦ垨鍚姩澶辫触"
+            print_warning "⚠ 端口 $port 未被占用"
+            echo "  🛠 可能原因: MTProxy未启动或启动失败"
         fi
 
-        # 妫€鏌ラ槻鐏閰嶇疆
-        print_info "馃攳 闃茬伀澧欓厤缃鏌?
+        # 检查防火墙配置
+        print_info "📡 防火墙配置检查"
         case $OS in
             "rhel")
                 if systemctl is-active firewalld >/dev/null 2>&1; then
                     if firewall-cmd --list-ports | grep -q "$port/tcp"; then
-                        print_success "鉁?Firewalld绔彛 $port 宸插紑鏀?
+                        print_success "✔ Firewalld端口 $port 已开放"
                     else
-                        print_error "鉁?Firewalld绔彛 $port 鏈紑鏀?
-                        echo "  馃敡 瑙ｅ喅鏂规:"
+                        print_error "✘ Firewalld端口 $port 未开放"
+                        echo "  🔧 解决方案:"
                         echo "    firewall-cmd --permanent --add-port=$port/tcp"
                         echo "    firewall-cmd --permanent --add-port=$web_port/tcp"
                         echo "    firewall-cmd --reload"
                     fi
                 else
-                    print_info "鈩?Firewalld鏈繍琛?
+                    print_info "☑ Firewalld未运行"
                 fi
                 ;;
             "debian")
                 if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
                     if ufw status | grep -q "$port/tcp"; then
-                        print_success "鉁?UFW绔彛 $port 宸插紑鏀?
+                        print_success "✔ UFW端口 $port 已开放"
                     else
-                        print_error "鉁?UFW绔彛 $port 鏈紑鏀?
-                        echo "  馃敡 瑙ｅ喅鏂规:"
+                        print_error "✘ UFW端口 $port 未开放"
+                        echo "  🔧 解决方案:"
                         echo "    ufw allow $port/tcp"
                         echo "    ufw allow $web_port/tcp"
                     fi
                 else
-                    print_info "鈩?UFW鏈縺娲绘垨鏈畨瑁?
+                    print_info "☑ UFW未激活或未安装"
                 fi
                 ;;
             "alpine")
-                print_info "鈩?Alpine Linux閫氬父鏃犻渶棰濆闃茬伀澧欓厤缃?
+                print_info "☑ Alpine Linux通常无需额外防火墙配置"
                 ;;
         esac
 
-        # 杩炴帴娴嬭瘯寤鸿
+        # 连接测试建议
         echo ""
-        print_info "馃攳 杩炴帴娴嬭瘯寤鸿"
-        echo "1. 鏈湴娴嬭瘯: telnet 127.0.0.1 $port"
+        print_info "📡 连接测试建议"
+        echo "1. 本地测试: telnet 127.0.0.1 $port"
         if [[ "$HAS_IPV4" == true ]]; then
-            echo "2. IPv4娴嬭瘯: telnet $PUBLIC_IPV4 $port"
+            echo "2. IPv4测试: telnet $PUBLIC_IPV4 $port"
         fi
         if [[ "$HAS_IPV6" == true ]]; then
-            echo "3. IPv6娴嬭瘯: telnet $PUBLIC_IPV6 $port"
+            echo "3. IPv6测试: telnet $PUBLIC_IPV6 $port"
         fi
-        echo "4. 浣跨敤Telegram瀹㈡埛绔祴璇曡繛鎺ラ摼鎺?
+        echo "4. 使用Telegram客户端测试连接链接"
 
     else
-        print_warning "鈿?MTProxy閰嶇疆鏂囦欢涓嶅瓨鍦?
-        echo "  馃挕 寤鸿: 鍏堣繍琛屽畨瑁呯▼搴忓垱寤洪厤缃?
+        print_warning "⚠ MTProxy配置文件不存在"
+        echo "  🛠 建议: 先运行安装程序创建配置"
     fi
 }
 
-# 鑷姩淇鍔熻兘
+# 自动修复功能
 auto_fix() {
-    function_header "鑷姩淇鍔熻兘"
+    function_header "自动修复功能"
 
-    # 缃戠粶鐜璇婃柇
+    # 网络环境诊断
     diagnose_network_issues
 
-    # 瀹夎缂哄け鐨勪緷璧?    print_info "妫€鏌ュ苟瀹夎缂哄け鐨勪緷璧?.."
+    # 检查并安装缺失的依赖
+    print_info "检查并安装缺失的依赖..."
     case $OS in
         "alpine")
             apk update >/dev/null 2>&1
@@ -1096,271 +1137,121 @@ auto_fix() {
             apt install -y curl wget procps net-tools netcat >/dev/null 2>&1
             ;;
     esac
-    print_success "渚濊禆妫€鏌ュ畬鎴?
+    print_success "依赖检查完成"
 
-    # 娓呯悊鍍靛案杩涚▼
-    print_info "娓呯悊鍙兘鐨勫兊灏歌繘绋?.."
+    # 清理残留进程
+    print_info "清理可能的重影进程..."
     pkill -f mtg 2>/dev/null
     rm -f $pid_file
-    print_success "杩涚▼娓呯悊瀹屾垚"
+    print_success "进程清理完成"
 
-    # 妫€鏌ュ苟淇MTG绋嬪簭
+    # 检查并修复MTG程序
     if [ ! -f "./mtg" ]; then
-        print_info "MTG绋嬪簭涓嶅瓨鍦紝姝ｅ湪涓嬭浇..."
+        print_info "MTG程序不存在，正在下载..."
         download_mtg
     fi
 
-    # 淇鏉冮檺
-    print_info "淇鏂囦欢鏉冮檺..."
+    # 修复权限
+    print_info "修复文件权限..."
     chmod +x ./mtg 2>/dev/null
     chmod +x ./*.sh 2>/dev/null
-    print_success "鏉冮檺淇瀹屾垚"
+    print_success "权限修复完成"
 
-    # 鏍规嵁缃戠粶鐜缁欏嚭寤鸿
-    print_info "缃戠粶鐜浼樺寲寤鸿..."
+    # 根据网络环境给出建议
+    print_info "网络环境优化建议..."
     ensure_network_detected
     case "$NETWORK_TYPE" in
         "warp_proxy")
-            print_warning "WARP鐜寤鸿:"
-            echo "- 鑰冭檻閲嶅惎WARP鏈嶅姟"
-            echo "- 鎴栧皾璇曚娇鐢ㄥ師鐢烮Pv6"
+            print_warning "WARP环境建议:"
+            echo "- 考虑重启WARP服务"
+            echo "- 或尝试使用原生IPv6"
             ;;
         "ipv6_only")
-            print_warning "IPv6鐜寤鸿:"
-            echo "- 纭繚瀹㈡埛绔敮鎸両Pv6"
-            echo "- 鑰冭檻閰嶇疆IPv4闅ч亾"
+            print_warning "IPv6环境建议:"
+            echo "- 确保客户端支持IPv6"
+            echo "- 考虑配置IPv4隧道"
             ;;
         "unknown")
-            print_error "缃戠粶鐜寮傚父锛屽缓璁鏌ョ綉缁滈厤缃?
+            print_error "网络环境异常，建议检查网络配置"
             ;;
     esac
 }
 
-# ==================== 楂樼骇鍔熻兘鍑芥暟 ====================
-
-# 杩炴帴娴嬭瘯
-test_connection() {
-    function_header "杩炴帴娴嬭瘯"
-    
-    if ! load_config; then
-        return 1
-    fi
-    
-    local public_ip=$(curl -s --connect-timeout 6 https://api.ip.sb/ip -A Mozilla --ipv4)
-    
-    # 娴嬭瘯绔彛杩為€氭€?    print_info "娴嬭瘯绔彛杩為€氭€?.."
-    if timeout 5 bash -c "</dev/tcp/127.0.0.1/$port" 2>/dev/null; then
-        echo -e "鏈湴绔彛 $port: ${GREEN}鍙繛鎺?{NC}"
-    else
-        echo -e "鏈湴绔彛 $port: ${RED}鏃犳硶杩炴帴${NC}"
-    fi
-    
-    if timeout 5 bash -c "</dev/tcp/127.0.0.1/$web_port" 2>/dev/null; then
-        echo -e "绠＄悊绔彛 $web_port: ${GREEN}鍙繛鎺?{NC}"
-    else
-        echo -e "绠＄悊绔彛 $web_port: ${RED}鏃犳硶杩炴帴${NC}"
-    fi
-    
-    # 娴嬭瘯澶栭儴杩炴帴
-    print_info "娴嬭瘯澶栭儴杩炴帴..."
-
-    ensure_network_detected
-
-    # 娴嬭瘯IPv4澶栭儴杩炴帴
-    if [[ "$HAS_IPV4" == true && -n "$PUBLIC_IPV4" ]]; then
-        print_info "娴嬭瘯IPv4澶栭儴杩炴帴 ($PUBLIC_IPV4:$port)..."
-        if timeout 10 bash -c "</dev/tcp/$PUBLIC_IPV4/$port" 2>/dev/null; then
-            echo -e "IPv4澶栭儴绔彛 $port: ${GREEN}鍙繛鎺?{NC}"
-        else
-            echo -e "IPv4澶栭儴绔彛 $port: ${RED}鏃犳硶杩炴帴${NC}"
-            if [[ "$IS_NAT" == true ]]; then
-                echo -e "  ${YELLOW}鎻愮ず: 妫€娴嬪埌NAT鐜锛屽彲鑳介渶瑕佺鍙ｆ槧灏?{NC}"
-            fi
-        fi
-    fi
-
-    # 娴嬭瘯IPv6澶栭儴杩炴帴
-    if [[ "$HAS_IPV6" == true && -n "$PUBLIC_IPV6" ]]; then
-        print_info "娴嬭瘯IPv6澶栭儴杩炴帴 ([$PUBLIC_IPV6]:$port)..."
-        # IPv6杩炴帴娴嬭瘯闇€瑕佺壒娈婂鐞?        if command -v nc >/dev/null 2>&1; then
-            if timeout 10 nc -6 -z "$PUBLIC_IPV6" "$port" 2>/dev/null; then
-                echo -e "IPv6澶栭儴绔彛 $port: ${GREEN}鍙繛鎺?{NC}"
-            else
-                echo -e "IPv6澶栭儴绔彛 $port: ${RED}鏃犳硶杩炴帴${NC}"
-            fi
-        else
-            echo -e "IPv6澶栭儴绔彛 $port: ${YELLOW}鏃犳硶娴嬭瘯 (缂哄皯nc宸ュ叿)${NC}"
-        fi
-    else
-        echo -e "IPv6杩炴帴: ${YELLOW}涓嶅彲鐢紝璺宠繃IPv6杩炴帴娴嬭瘯${NC}"
-    fi
-
-    # 鐢熸垚杩炴帴淇℃伅
-    local client_secret=$(generate_client_secret)
-
-    print_info "杩炴帴淇℃伅:"
-    echo -e "缃戠粶鐜: ${GREEN}$NETWORK_TYPE${NC}"
-
-    if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "鏈嶅姟鍣↖Pv4: ${GREEN}$PUBLIC_IPV4${NC}"
-    fi
-    if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "鏈嶅姟鍣↖Pv6: ${GREEN}$PUBLIC_IPV6${NC}"
-    fi
-
-    echo -e "绔彛: ${GREEN}$port${NC}"
-    echo -e "瀵嗛挜: ${GREEN}$client_secret${NC}"
-    echo ""
-
-    # 鐢熸垚杩炴帴閾炬帴
-    if [[ "$HAS_IPV4" == true ]]; then
-        echo -e "${BLUE}Telegram杩炴帴閾炬帴 (IPv4):${NC}"
-        echo "https://t.me/proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
-        echo "tg://proxy?server=${PUBLIC_IPV4}&port=${port}&secret=${client_secret}"
-        echo ""
-    fi
-
-    if [[ "$HAS_IPV6" == true ]]; then
-        echo -e "${BLUE}Telegram杩炴帴閾炬帴 (IPv6):${NC}"
-        echo "https://t.me/proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
-        echo "tg://proxy?server=${PUBLIC_IPV6}&port=${port}&secret=${client_secret}"
-    fi
-}
-
-# 缃戠粶鐜璇婃柇
-diagnose_network_issues() {
-    function_header "MTProxy 缃戠粶闂璇婃柇"
-
-    # 鍏堣繘琛屽熀鏈殑缃戠粶妫€鏌?    ensure_network_detected
-
-    print_info "馃攳 缃戠粶鐜鍒嗘瀽"
-    echo -e "褰撳墠鐜: ${GREEN}$NETWORK_TYPE${NC}"
-
-    # 閽堝涓嶅悓鐜鎻愪緵璇︾粏鐨勮瘖鏂拰寤鸿
-    case "$NETWORK_TYPE" in
-        "dual_stack")
-            print_success "鉁?鍙屾爤鐜 - 鏈€浣抽厤缃?
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - IPv4鍜孖Pv6閮藉彲鐢?
-            echo "    - MTProxy灏嗕紭鍏堜娇鐢↖Pv4"
-            echo "    - 瀹㈡埛绔彲閫夋嫨IPv4鎴朓Pv6杩炴帴"
-            ;;
-        "ipv4_only")
-            print_warning "鈿?绾疘Pv4鐜"
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - 鍙湁IPv4鍙敤"
-            echo "    - IPv6杩炴帴閾炬帴灏嗘棤娉曚娇鐢?
-            echo "  馃挕 浼樺寲寤鸿:"
-            echo "    - 鑰冭檻鍚敤IPv6锛堝鏋滄湇鍔″晢鏀寔锛?
-            echo "    - 纭繚IPv4杩炴帴绋冲畾鎬?
-            ;;
-        "ipv6_only")
-            print_warning "鈿?绾疘Pv6鐜"
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - 鍙湁IPv6鍙敤"
-            echo "    - IPv4杩炴帴閾炬帴灏嗘棤娉曚娇鐢?
-            echo "  馃挕 浼樺寲寤鸿:"
-            echo "    - 閰嶇疆IPv4闅ч亾鎴朜AT64"
-            echo "    - 鎴栦娇鐢╓ARP鑾峰彇IPv4杩炴帴"
-            echo "    - 纭繚瀹㈡埛绔敮鎸両Pv6"
-            ;;
-        "warp_proxy")
-            print_warning "鈿?WARP浠ｇ悊鐜"
-            echo "  馃搵 璇婃柇缁撴灉:"
-            echo "    - 妫€娴嬪埌Cloudflare WARP"
-            echo "    - 鍙兘瀛樺湪杩炴帴绋冲畾鎬ч棶棰?
-            echo "  馃挕 浼樺寲寤鸿:"
-    # 鍋滄褰撳墠鏈嶅姟
-    if check_process_status >/dev/null; then
-        print_info "鍋滄褰撳墠MTProxy鏈嶅姟..."
-        stop_mtproxy
-    fi
-    
-    # 鏇存柊閰嶇疆
-    print_info "鏇存柊閰嶇疆鏂囦欢..."
-    sed -i "s/port=$port/port=$new_port/" ./mtp_config
-    sed -i "s/web_port=$web_port/web_port=$new_web_port/" ./mtp_config
-    
-    print_success "绔彛閰嶇疆宸叉洿鏂?
-    print_info "鏂伴厤缃?"
-    echo "  瀹㈡埛绔鍙? $new_port"
-    echo "  绠＄悊绔彛: $new_web_port"
-    
-    # 璇㈤棶鏄惁閲嶅惎鏈嶅姟
-    read -p "鏄惁绔嬪嵆鍚姩鏈嶅姟? (y/N): " restart_confirm
-    if [[ "$restart_confirm" =~ ^[Yy]$ ]]; then
-        start_mtproxy
-    fi
-}
-
-# 淇敼绔彛閰嶇疆
+# 修改端口配置
 change_ports() {
-    function_header "淇敼绔彛閰嶇疆"
+    function_header "修改端口配置"
     
     if ! load_config; then
         return 1
     fi
     
-    print_info "褰撳墠閰嶇疆:"
-    echo "  瀹㈡埛绔彛: $port"
-    echo "  绠＄悊绔彛: $web_port"
+    print_info "当前配置:"
+    echo "  客户端端口: $port"
+    echo "  管理端口: $web_port"
     echo ""
     
-    # 杈撳叆鏂扮鍙?    read -p "璇疯緭鍏ユ柊鐨勫瀹㈡埛绔彛 [$port]: " new_port
+    # 输入新端口
+    read -p "请输入新的客户端端口 [$port]: " new_port
     if [ -z "$new_port" ]; then
         new_port=$port
     fi
     
-    read -p "璇疯緭鍏ユ柊鐨勭鐞嗙鍙?[$web_port]: " new_web_port
+    read -p "请输入新的管理端口 [$web_port]: " new_web_port
     if [ -z "$new_web_port" ]; then
         new_web_port=$web_port
     fi
     
-    # 楠岃瘉绔彛
+    # 验证端口
     if ! validate_port $new_port; then
-        print_error "鏃犳晥鐨勫瀹㈡埛绔彛: $new_port"
+        print_error "无效的客户端端口: $new_port"
         return 1
     fi
     
     if ! validate_port $new_web_port; then
-        print_error "鏃犳晥鐨勭鐞嗙鍙?$new_web_port"
+        print_error "无效的管理端口: $new_web_port"
         return 1
     fi
     
-    # 妫€鏌ョ鍙崇煕鐩?    if [ "$new_port" != "$port" ] && is_port_occupied $new_port; then
-        print_error "绔彛 $new_port 宸茶琚崰鐢?        return 1
+    # 检查端口冲突
+    if [ "$new_port" != "$port" ] && is_port_occupied $new_port; then
+        print_error "端口 $new_port 已被占用"
+        return 1
     fi
     
     if [ "$new_web_port" != "$web_port" ] && is_port_occupied $new_web_port; then
-        print_error "绔彛 $new_web_port 宸茶琚崰鐢?        return 1
+        print_error "端口 $new_web_port 已被占用"
+        return 1
     fi
     
-    # 鍋滄鍚庡湪鏈嶅姟
+    # 停止当前服务
     if check_process_status >/dev/null; then
-        print_info "鍋滄褰撳墠MTProxy鏈嶅姟..."
+        print_info "停止当前MTProxy服务..."
         stop_mtproxy
     fi
     
-    # 鏇存柊閰嶇疆
-    print_info "鏇存柊閰嶇疆鏂囦欢..."
+    # 更新配置
+    print_info "更新配置文件..."
     sed -i "s/port=$port/port=$new_port/" ./mtp_config
     sed -i "s/web_port=$web_port/web_port=$new_web_port/" ./mtp_config
     
-    print_success "绔彛閰嶇疆宸叉洿鏂?    print_info "鏂伴厤缃?    echo "  瀹㈡埛绔彛: $new_port"
-    echo "  绠＄悊绔彛: $new_web_port"
+    print_success "端口配置已更新"
+    print_info "新配置:"
+    echo "  客户端端口: $new_port"
+    echo "  管理端口: $new_web_port"
     
-    # 璇㈤棶鏄惁閲嶅惎鏈嶅姟
-    read -p "鏄惁绔嬪嵆鍚姩鏈嶅姟? (y/N): " restart_confirm
+    # 询问是否立即启动服务
+    read -p "是否立即启动服务? (y/N): " restart_confirm
     if [[ "$restart_confirm" =~ ^[Yy]$ ]]; then
         start_mtproxy
     fi
 }
 
-# 杩涚▼鐩戞帶鍜岃嚜鍔ㄩ噸鍚?monitor_mtproxy() {
-    function_header "杩涚▼鐩戞帶鍜岃嚜鍔ㄩ噸鍚?
+# 进程监控和自动重启
+monitor_mtproxy() {
+    function_header "进程监控和自动重启"
     
-    print_info "鍚姩MTProxy杩涚▼鐩戞帶..."
-    print_warning "鎸?Ctrl+C 鍋滄鐩戞帶"
+    print_info "启动MTProxy进程监控..."
+    print_warning "按 Ctrl+C 停止监控"
     
     local restart_count=0
     local max_restarts=5
@@ -1370,30 +1261,32 @@ change_ports() {
     while true; do
         local pid=$(check_process_status)
         if [ $? -eq 0 ]; then
-            print_success "MTProxy杩愯姝ｅ父 (PID: $pid)"
-            restart_count=0  # 閲嶇疆閲嶅惎璁℃暟
+            print_success "MTProxy运行正常 (PID: $pid)"
+            restart_count=0  # 重置重启计数
         else
-            print_warning "MTProxy杩涚▼宸插仠姝紝灏濊瘯閲嶅惎..."
+            print_warning "MTProxy进程已停止，尝试重启..."
             
-            # 妫€鏌ラ噸鍚鐜囬檺鍒?            local current_time=$(date +%s)
+            # 检查重启频率限制
+            local current_time=$(date +%s)
             if [ $((current_time - last_restart_time)) -lt 60 ]; then
-                print_error "閲嶅惎杩囦簬棰戠箒锛岀瓑寰?0绉?.."
+                print_error "重启过于频繁，等待60秒..."
                 sleep 60
                 continue
             fi
             
-            # 妫€鏌ユ渶澶ч噸鍚鏁?            if [ $restart_count -ge $max_restarts ]; then
-                print_error "宸茶揪鍒版渶澶ч噸鍚鏁?($max_restarts)锛屽仠姝㈢洃鎺?
+            # 检查最大重启次数
+            if [ $restart_count -ge $max_restarts ]; then
+                print_error "已达到最大重启次数 ($max_restarts)，停止监控"
                 break
             fi
             
-            # 灏濊瘯閲嶅惎
+            # 尝试重启
             if start_mtproxy; then
                 restart_count=$((restart_count + 1))
                 last_restart_time=$current_time
-                print_success "閲嶅惎鎴愬姛 (绗?$restart_count 娆?"
+                print_success "重启成功 (第 $restart_count 次)"
             else
-                print_error "閲嶅惎澶辫触"
+                print_error "重启失败"
             fi
         fi
         
@@ -1401,12 +1294,12 @@ change_ports() {
     done
 }
 
-# 鍒涘缓systemd鏈嶅姟
+# 创建systemd服务
 create_systemd_service() {
-    function_header "鍒涘缓systemd鏈嶅姟"
+    function_header "创建systemd服务"
     
     if [ $EUID -ne 0 ]; then
-        print_error "鍒涘缓systemd鏈嶅姟闇€瑕乺oot鏉冮檺"
+        print_error "创建systemd服务需要root权限"
         return 1
     fi
     
@@ -1417,7 +1310,7 @@ create_systemd_service() {
     local service_file="/etc/systemd/system/mtproxy.service"
     local script_path="$(pwd)/mtproxy.sh"
     
-    print_info "鍒涘缓systemd鏈嶅姟鏂囦欢..."
+    print_info "创建systemd服务文件..."
     cat > $service_file <<EOF
 [Unit]
 Description=MTProxy Service
@@ -1439,19 +1332,20 @@ StandardError=journal
 WantedBy=multi-user.target
 EOF
     
-    # 閲嶈浇systemd骞跺惎鐢ㄦ湇鍔?    systemctl daemon-reload
+    # 重载systemd并启用服务
+    systemctl daemon-reload
     systemctl enable mtproxy
     
-    print_success "systemd鏈嶅姟鍒涘缓鎴愬姛"
-    print_info "鏈嶅姟绠＄悊鍛戒护:"
-    echo "  鍚姩鏈嶅姟: systemctl start mtproxy"
-    echo "  鍋滄鏈嶅姟: systemctl stop mtproxy"
-    echo "  閲嶅惎鏈嶅姟: systemctl restart mtproxy"
-    echo "  鏌ョ湅鐘舵€? systemctl status mtproxy"
-    echo "  鏌ョ湅鏃ュ織: journalctl -u mtproxy -f"
+    print_success "systemd服务创建成功"
+    print_info "服务管理命令:"
+    echo "  启动服务: systemctl start mtproxy"
+    echo "  停止服务: systemctl stop mtproxy"
+    echo "  重启服务: systemctl restart mtproxy"
+    echo "  查看状态: systemctl status mtproxy"
+    echo "  查看日志: journalctl -u mtproxy -f"
     
-    # 璇㈤棶鏄惁绔嬪嵆鍚姩
-    read -p "鏄惁绔嬪嵆鍚姩systemd鏈嶅姟? (y/N): " start_confirm
+    # 询问是否立即启动
+    read -p "是否立即启动systemd服务? (y/N): " start_confirm
     if [[ "$start_confirm" =~ ^[Yy]$ ]]; then
         systemctl start mtproxy
         sleep 2
@@ -1459,105 +1353,107 @@ EOF
     fi
 }
 
-# 鍋ュ悍妫€鏌?health_check() {
-    function_header "MTProxy鍋ュ悍妫€鏌?
+# 健康检查
+health_check() {
+    function_header "MTProxy健康检查"
     
     local health_score=0
     local max_score=100
     
-    print_info "寮€濮嬪仴搴锋鏌?.."
+    print_info "开始健康检查..."
     
-    # 1. 妫€鏌ラ厤缃枃浠?(20鍒?
+    # 1. 检查配置文件 (20分)
     if [ -f "./mtp_config" ]; then
-        print_success "鉁?閰嶇疆鏂囦欢瀛樺湪 (+20鍒?"
+        print_success "✔ 配置文件存在 (+20分)"
         health_score=$((health_score + 20))
     else
-        print_error "鉁?閰嶇疆鏂囦欢涓嶅瓨鍦?(-20鍒?"
+        print_error "✘ 配置文件不存在 (-20分)"
     fi
     
-    # 2. 妫€鏌TG绋嬪簭 (20鍒?
+    # 2. 检查MTG程序 (20分)
     if [ -f "./mtg" ] && [ -x "./mtg" ]; then
-        print_success "鉁?MTG绋嬪簭瀛樺湪涓斿彲鎵ц (+20鍒?"
+        print_success "✔ MTG程序存在且可执行 (+20分)"
         health_score=$((health_score + 20))
     else
-        print_error "鉁?MTG绋嬪簭涓嶅瓨鍦ㄦ垨涓嶅彲鎵ц (-20鍒?"
+        print_error "✘ MTG程序不存在或不可执行 (-20分)"
     fi
     
-    # 3. 妫€鏌ヨ繘绋嬬姸鎬?(30鍒?
+    # 3. 检查进程状态 (30分)
     local pid=$(check_process_status)
     if [ $? -eq 0 ]; then
-        print_success "鉁?MTProxy杩涚▼杩愯姝ｅ父 (PID: $pid) (+30鍒?"
+        print_success "✔ MTProxy进程运行正常 (PID: $pid) (+30分)"
         health_score=$((health_score + 30))
         
-        # 妫€鏌ュ唴瀛樹娇鐢?        local mem_usage=$(ps -o rss= -p $pid 2>/dev/null | awk '{print int($1/1024)}')
+        # 检查内存使用
+        local mem_usage=$(ps -o rss= -p $pid 2>/dev/null | awk '{print int($1/1024)}')
         if [ -n "$mem_usage" ]; then
             if [ $mem_usage -lt 100 ]; then
-                print_success "鉁?鍐呭瓨浣跨敤姝ｅ父 (${mem_usage}MB) (+10鍒?"
+                print_success "✔ 内存使用正常 (${mem_usage}MB) (+10分)"
                 health_score=$((health_score + 10))
             else
-                print_warning "鈿?鍐呭瓨浣跨敤杈冮珮 (${mem_usage}MB) (+5鍒?"
+                print_warning "⚠ 内存使用较高 (${mem_usage}MB) (+5分)"
                 health_score=$((health_score + 5))
             fi
         fi
     else
-        print_error "鉁?MTProxy杩涚▼鏈繍琛?(-30鍒?"
+        print_error "✘ MTProxy进程未运行 (-30分)"
     fi
     
-    # 4. 妫€鏌ョ鍙ｇ洃鍚?(20鍒?
+    # 4. 检查端口监听 (20分)
     if load_config; then
         if netstat -tulpn 2>/dev/null | grep -q ":$port "; then
-            print_success "鉁?绔彛 $port 鐩戝惉姝ｅ父 (+20鍒?"
+            print_success "✔ 端口 $port 监听正常 (+20分)"
             health_score=$((health_score + 20))
         else
-            print_error "鉁?绔彛 $port 鏈洃鍚?(-20鍒?"
+            print_error "✘ 端口 $port 未监听 (-20分)"
         fi
     fi
     
-    # 5. 妫€鏌ユ棩蹇楁枃浠?(10鍒?
+    # 5. 检查日志文件 (10分)
     if [ -f "./logs/mtproxy.log" ]; then
         local log_size=$(stat -c%s "./logs/mtproxy.log" 2>/dev/null || echo "0")
         if [ $log_size -gt 0 ]; then
-            print_success "鉁?鏃ュ織鏂囦欢姝ｅ父 (+10鍒?"
+            print_success "✔ 日志文件正常 (+10分)"
             health_score=$((health_score + 10))
         else
-            print_warning "鈿?鏃ュ織鏂囦欢涓虹┖ (+5鍒?"
+            print_warning "⚠ 日志文件为空 (+5分)"
             health_score=$((health_score + 5))
         fi
     else
-        print_warning "鈿?鏃ュ織鏂囦欢涓嶅瓨鍦?(+0鍒?"
+        print_warning "⚠ 日志文件不存在 (+0分)"
     fi
     
-    # 鏄剧ず鍋ュ悍璇勫垎
+    # 显示健康分数
     print_line
-    print_info "鍋ュ悍妫€鏌ュ畬鎴?
-    echo -e "鍋ュ悍璇勫垎: ${GREEN}$health_score/$max_score${NC}"
+    print_info "健康检查完成"
+    echo -e "健康分数: ${GREEN}$health_score/$max_score${NC}"
     
     if [ $health_score -ge 90 ]; then
-        print_success "馃帀 绯荤粺鐘舵€佷紭绉€"
+        print_success "🎉 系统状态优秀"
     elif [ $health_score -ge 70 ]; then
-        print_warning "鈿?绯荤粺鐘舵€佽壇濂斤紝鏈夋敼杩涚┖闂?
+        print_warning "⚠ 系统状态良好，有改进空间"
     elif [ $health_score -ge 50 ]; then
-        print_warning "鈿?绯荤粺鐘舵€佷竴鑸紝寤鸿妫€鏌?
+        print_warning "⚠ 系统状态一般，建议检查"
     else
-        print_error "鉂?绯荤粺鐘舵€佽緝宸紝闇€瑕佷慨澶?
+        print_error "✘ 系统状态较差，需要修复"
     fi
     
     print_line
 }
 
-# 瀹屽叏鍗歌浇MTProxy
+# 完全卸载MTProxy
 uninstall_mtproxy() {
-    function_header "瀹屽叏鍗歌浇MTProxy"
+    function_header "完全卸载MTProxy"
     
-    print_warning "鈿?鍗冲皢瀹屽叏鍗歌浇MTProxy锛屽寘鎷墍鏈夐厤缃拰鏃ュ織鏂囦欢"
-    read -p "纭缁х画? (y/N): " confirm
+    print_warning "⚠ 将完全卸载MTProxy，包括所有配置和日志文件"
+    read -p "确认继续? (y/N): " confirm
     if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        print_info "鍙栨秷鍗歌浇"
+        print_info "取消卸载"
         return 0
     fi
     
-    # 1. 鍋滄MTProxy杩涚▼
-    print_info "鍋滄MTProxy杩涚▼..."
+    # 1. 停止MTProxy进程
+    print_info "停止MTProxy进程..."
     local pid=$(check_process_status)
     if [ $? -eq 0 ]; then
         kill -TERM $pid 2>/dev/null
@@ -1565,37 +1461,40 @@ uninstall_mtproxy() {
         if kill -0 $pid 2>/dev/null; then
             kill -KILL $pid 2>/dev/null
         fi
-        print_success "MTProxy杩涚▼宸插仠姝?
+        print_success "MTProxy进程已停止"
     else
-        print_info "MTProxy杩涚▼鏈繍琛?
+        print_info "MTProxy进程未运行"
     fi
     
-    # 2. 鍋滄骞跺垹闄ystemd鏈嶅姟
-    print_info "妫€鏌ュ苟鍒犻櫎systemd鏈嶅姟..."
+    # 2. 停止并删除systemd服务
+    print_info "检查并删除systemd服务..."
     if [ -f "/etc/systemd/system/mtproxy.service" ]; then
         systemctl stop mtproxy 2>/dev/null
         systemctl disable mtproxy 2>/dev/null
         rm -f /etc/systemd/system/mtproxy.service
         systemctl daemon-reload 2>/dev/null
-        print_success "systemd鏈嶅姟宸插垹闄?
+        print_success "systemd服务已删除"
     else
-        print_info "鏈彂鐜皊ystemd鏈嶅姟"
+        print_info "未发现systemd服务"
     fi
     
-    # 3. 娓呯悊杩涚▼鍜岀鍙?    print_info "娓呯悊鐩稿叧杩涚▼..."
+    # 3. 清理相关进程
+    print_info "清理相关进程..."
     pkill -f mtg 2>/dev/null
     pkill -f mtproxy 2>/dev/null
     
-    # 4. 鍒犻櫎鏂囦欢鍜岀洰褰?    print_info "鍒犻櫎绋嬪簭鏂囦欢..."
+    # 4. 删除文件和目录
+    print_info "删除程序文件..."
     rm -f ./mtg
     rm -f ./mtp_config
     rm -f $pid_file
     rm -rf ./pid
     rm -rf ./logs
     
-    # 5. 娓呯悊闃茬伀澧欒鍒欙紙濡傛灉瀛樺湪锛?    print_info "娓呯悊闃茬伀澧欒鍒?.."
+    # 5. 清理防火墙规则（如果存在）
+    print_info "清理防火墙规则..."
     if load_config 2>/dev/null; then
-        # 灏濊瘯鍒犻櫎鍙兘鐨勯槻鐏瑙勫垯
+        # 尝试删除可能的防火墙规则
         if command -v ufw >/dev/null 2>&1; then
             ufw delete allow $port 2>/dev/null
             ufw delete allow $web_port 2>/dev/null
@@ -1608,20 +1507,20 @@ uninstall_mtproxy() {
     fi
     
     print_line
-    print_success "鉁?MTProxy宸插畬鍏ㄥ嵏杞?
-    print_info "浠ヤ笅鏂囦欢宸插垹闄わ細"
-    echo "  - MTG绋嬪簭 (./mtg)"
-    echo "  - 閰嶇疆鏂囦欢 (./mtp_config)"
-    echo "  - PID鏂囦欢 (./pid/)"
-    echo "  - 鏃ュ織鐩綍 (./logs/)"
-    echo "  - systemd鏈嶅姟 (/etc/systemd/system/mtproxy.service)"
-    print_info "绠＄悊鑴氭湰 (mtproxy.sh) 淇濈暀锛屽彲鐢ㄤ簬閲嶆柊瀹夎"
+    print_success "✔ MTProxy已完全卸载"
+    print_info "以下文件已删除："
+    echo "  - MTG程序 (./mtg)"
+    echo "  - 配置文件 (./mtp_config)"
+    echo "  - PID文件 (./pid/)"
+    echo "  - 日志目录 (./logs/)"
+    echo "  - systemd服务 (/etc/systemd/system/mtproxy.service)"
+    print_info "管理脚本 (mtproxy.sh) 保留，可用于重新安装"
     print_line
 }
 
-# 涓€閿畨瑁呭苟杩愯
+# 一键安装并运行
 install_and_run() {
-    function_header "寮€濮嬩竴閿畨瑁匨TProxy..."
+    function_header "开始一键安装MTProxy..."
 
     ensure_system_detected
     install_dependencies
@@ -1629,14 +1528,15 @@ install_and_run() {
     config_mtproxy
     start_mtproxy
 
-    print_success "瀹夎瀹屾垚锛?
+    print_success "安装完成！"
 }
 
-# 瀹屾暣绯荤粺妫€鏌?full_system_check() {
+# 完整系统检查
+full_system_check() {
     clear
     echo -e "${PURPLE}"
     echo "========================================"
-    echo "        MTProxy 瀹屾暣绯荤粺妫€鏌?
+    echo "        MTProxy 完整系统检查"
     echo "========================================"
     echo -e "${NC}"
 
@@ -1650,130 +1550,133 @@ install_and_run() {
     test_connection
 
     print_line
-    print_info "绯荤粺妫€鏌ュ畬鎴?
+    print_info "系统检查完成"
     print_line
 }
 
-# 涓昏彍鍗?show_menu() {
+# 主菜单
+show_menu() {
     clear
     echo -e "${PURPLE}"
     echo "========================================"
-    echo "     MTProxy 澧炲己鐗堢鐞嗚剼鏈?
-    echo "   鏀寔 Alpine/RHEL/Debian 绯荤粺"
+    echo "     MTProxy 增强版管理系统"
+    echo "   支持 Alpine/RHEL/Debian 系统"
     echo "========================================"
     echo -e "${NC}"
 
     if [ -f "./mtp_config" ]; then
         show_proxy_info
     else
-        print_info "MTProxy鏈畨瑁?
+        print_info "MTProxy未安装"
         print_line
     fi
 
-    echo -e "${YELLOW}璇烽€夋嫨鎿嶄綔:${NC}"
-    echo "1.  涓€閿畨瑁呭苟杩愯MTProxy"
-    echo "2.  鍚姩MTProxy"
-    echo "3.  鍋滄MTProxy"
-    echo "4.  閲嶅惎MTProxy"
-    echo "5.  鏌ョ湅浠ｇ悊淇℃伅"
-    echo "6.  淇敼绔彛閰嶇疆"
-    echo "7.  瀹屾暣绯荤粺妫€鏌?
-    echo "8.  缃戠粶鐜璇婃柇"
-    echo "9.  鑷姩淇闂"
-    echo "10. 杩涚▼鐩戞帶鍜岃嚜鍔ㄩ噸鍚?
-    echo "11. 鍒涘缓systemd鏈嶅姟"
-    echo "12. 鍋ュ悍妫€鏌?
-    echo "13. 瀹屽叏鍗歌浇MTProxy"
-    echo "0.  閫€鍑?
+    echo -e "${YELLOW}请选择操作:${NC}"
+    echo "1.  一键安装并运行MTProxy"
+    echo "2.  启动MTProxy"
+    echo "3.  停止MTProxy"
+    echo "4.  重启MTProxy"
+    echo "5.  查看代理信息"
+    echo "6.  修改端口配置"
+    echo "7.  完整系统检查"
+    echo "8.  网络环境诊断"
+    echo "9.  自动修复问题"
+    echo "10. 进程监控和自动重启"
+    echo "11. 创建systemd服务"
+    echo "12. 健康检查"
+    echo "13. 完全卸载MTProxy"
+    echo "0.  退出"
     echo
 }
 
-# 涓荤▼搴?main() {
-    # 妫€鏌ユ槸鍚︿负root鐢ㄦ埛
+# 主程序
+main() {
+    # 检查是否为root用户
     if [[ $EUID -ne 0 ]]; then
-        print_warning "寤鸿浣跨敤root鐢ㄦ埛杩愯姝よ剼鏈互鑾峰緱瀹屾暣鍔熻兘"
+        print_warning "建议使用root用户运行此脚本以获取完整功能"
     fi
 
     while true; do
         show_menu
-        read -p "璇疯緭鍏ラ€夐」 [0-13]: " choice
+        read -p "请输入选项 [0-13]: " choice
 
         case $choice in
             1)
                 install_and_run
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             2)
                 ensure_system_detected
                 start_mtproxy
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             3)
                 stop_mtproxy
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             4)
                 ensure_system_detected
                 stop_mtproxy
                 sleep 1
                 start_mtproxy
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             5)
                 show_proxy_info
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             6)
                 ensure_system_detected
                 change_ports
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             7)
                 full_system_check
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             8)
                 ensure_system_detected
                 diagnose_network_issues
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             9)
                 ensure_system_detected
                 auto_fix
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             10)
                 ensure_system_detected
                 monitor_mtproxy
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             11)
                 ensure_system_detected
                 create_systemd_service
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             12)
                 ensure_system_detected
                 health_check
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             13)
                 uninstall_mtproxy
-                read -p "鎸夊洖杞﹂敭缁х画..."
+                read -p "按回车键继续..."
                 ;;
             0)
-                print_info "閫€鍑鸿剼鏈?
+                print_info "退出脚本"
                 exit 0
                 ;;
             *)
-                print_error "鏃犳晥閫夐」锛岃閲嶆柊閫夋嫨"
+                print_error "无效选项，请重新选择"
                 sleep 1
                 ;;
         esac
     done
 }
 
-# 妫€鏌ュ弬鏁?if [[ $# -eq 0 ]]; then
+# 检查参数
+if [[ $# -eq 0 ]]; then
     main
 else
     ensure_system_detected
@@ -1820,23 +1723,23 @@ else
             uninstall_mtproxy
             ;;
         *)
-            echo "鐢ㄦ硶: $0 [install|start|stop|restart|status|check|diagnose|fix|ports|monitor|systemd|health|uninstall]"
-            echo "鎴栫洿鎺ヨ繍琛?$0 杩涘叆浜や簰妯″紡"
+            echo "用法: $0 [install|start|stop|restart|status|check|diagnose|fix|ports|monitor|systemd|health|uninstall]"
+            echo "或直接运行 $0 进入交互模式"
             echo ""
-            echo "鍛戒护璇存槑:"
-            echo "  install   - 涓€閿畨瑁呭苟杩愯"
-            echo "  start     - 鍚姩鏈嶅姟"
-            echo "  stop      - 鍋滄鏈嶅姟"
-            echo "  restart   - 閲嶅惎鏈嶅姟"
-            echo "  status    - 鏌ョ湅鐘舵€?
-            echo "  check     - 瀹屾暣绯荤粺妫€鏌?
-            echo "  diagnose  - 缃戠粶鐜璇婃柇"
-            echo "  fix       - 鑷姩淇闂"
-            echo "  ports     - 淇敼绔彛閰嶇疆"
-            echo "  monitor   - 杩涚▼鐩戞帶鍜岃嚜鍔ㄩ噸鍚?
-            echo "  systemd   - 鍒涘缓systemd鏈嶅姟"
-            echo "  health    - 鍋ュ悍妫€鏌?
-            echo "  uninstall - 瀹屽叏鍗歌浇"
+            echo "命令说明:"
+            echo "  install   - 一键安装并运行"
+            echo "  start     - 启动服务"
+            echo "  stop      - 停止服务"
+            echo "  restart   - 重启服务"
+            echo "  status    - 查看状态"
+            echo "  check     - 完整系统检查"
+            echo "  diagnose  - 网络环境诊断"
+            echo "  fix       - 自动修复问题"
+            echo "  ports     - 修改端口配置"
+            echo "  monitor   - 进程监控和自动重启"
+            echo "  systemd   - 创建systemd服务"
+            echo "  health    - 健康检查"
+            echo "  uninstall - 完全卸载"
             ;;
     esac
 fi
