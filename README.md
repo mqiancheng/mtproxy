@@ -13,13 +13,10 @@
 ### `mtproxy.sh` - 增强版管理脚本
 提供完整的安装、配置、管理和监控功能，包含进程稳定性解决方案。
 
-```
 ## 🚀 快速开始
 
 ### 📝 使用说明
-```bash
-# 下载脚本并运行
-wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy.sh && chmod +x mtproxy.sh && ./mtproxy.sh
+
 **基本使用流程：**
 
 1. **首次安装**：运行脚本选择 `功能1` 进行一键安装并启动
@@ -33,6 +30,21 @@ wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy.sh && chm
 # 选择 1 - 一键安装并运行MTProxy
 # 测试正常后，选择 11 - 创建systemd服务（推荐）
 ```
+
+### 💻 一键安装命令
+
+```bash
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy.sh && chmod +x mtproxy.sh && ./mtproxy.sh
+```
+
+<details>
+<summary>📋 点击复制安装命令</summary>
+
+```bash
+wget https://raw.githubusercontent.com/mqiancheng/mtproxy/main/mtproxy.sh && chmod +x mtproxy.sh && ./mtproxy.sh
+```
+
+</details>
 
 ## 📋 功能特性
 
@@ -147,9 +159,6 @@ systemctl enable mtproxy   # 开机自启
 ```bash
 # 启动监控
 ./mtproxy.sh monitor
-
-# 或使用独立监控脚本
-./mtproxy_monitor.sh
 ```
 
 ### 防火墙配置
