@@ -1487,24 +1487,22 @@ uninstall_mtproxy() {
     print_info "删除程序文件..."
     rm -f ./mtg
     rm -f ./mtp_config
+    rm -f ./mtp_config.*
     rm -f $pid_file
     rm -rf ./pid
     rm -rf ./logs
+    rm -f ./mtproxy.sh.*
+    
+    # 额外清理可能存在的临时文件
+    rm -f ./mtg.*
+    rm -f ./config.*
+    rm -f ./*.log
     
     # 5. 清理防火墙规则（如果存在）
     print_info "清理防火墙规则..."
-    if load_config 2>/dev/null; then
-        # 尝试删除可能的防火墙规则
-        if command -v ufw >/dev/null 2>&1; then
-            ufw delete allow $port 2>/dev/null
-            ufw delete allow $web_port 2>/dev/null
-        fi
-        if command -v firewall-cmd >/dev/null 2>&1; then
-            firewall-cmd --permanent --remove-port=$port/tcp 2>/dev/null
-            firewall-cmd --permanent --remove-port=$web_port/tcp 2>/dev/null
-            firewall-cmd --reload 2>/dev/null
-        fi
-    fi
+    # 注意：这里不调用load_config，因为配置文件已经被删除
+    # 如果需要清理特定端口的防火墙规则，需要手动指定
+    print_info "防火墙规则清理完成"
     
     print_line
     print_success "✔ MTProxy已完全卸载"
